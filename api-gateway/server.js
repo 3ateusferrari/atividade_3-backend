@@ -1,4 +1,3 @@
-// api-gateway/server.js
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
@@ -6,17 +5,14 @@ const cors = require('cors');
 const app = express();
 const PORT = 3000;
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Logging middleware
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
 });
 
-// Proxy configurations
 const services = {
     usuarios: 'http://localhost:3001',
     alarmes: 'http://localhost:3002',
@@ -26,7 +22,6 @@ const services = {
     logs: 'http://localhost:3006'
 };
 
-// Create proxy middlewares
 Object.keys(services).forEach(service => {
     app.use(`/api/${service}`, createProxyMiddleware({
         target: services[service],
@@ -44,7 +39,6 @@ Object.keys(services).forEach(service => {
     }));
 });
 
-// Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
@@ -53,7 +47,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Default route
 app.get('/', (req, res) => {
     res.json({
         message: 'Sistema de Controle de Alarmes - API Gateway',
@@ -69,7 +62,6 @@ app.get('/', (req, res) => {
     });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
     console.error('Gateway error:', err);
     res.status(500).json({ 
@@ -85,25 +77,3 @@ app.listen(PORT, () => {
         console.log(`  /api/${service} -> ${services[service]}`);
     });
 });
-
-// api-gateway/package.json
-/*
-{
-  "name": "api-gateway",
-  "version": "1.0.0",
-  "description": "API Gateway for Alarm Control System",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "http-proxy-middleware": "^2.0.6",
-    "cors": "^2.8.5"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  }
-}
-*/

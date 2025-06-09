@@ -1,4 +1,3 @@
-// cadastro-alarmes/server.js
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const axios = require('axios');
@@ -9,11 +8,9 @@ const PORT = 3002;
 
 app.use(express.json());
 
-// Database setup
 const dbPath = path.join(__dirname, 'alarmes.db');
 const db = new sqlite3.Database(dbPath);
 
-// Initialize database
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS alarmes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +40,6 @@ db.serialize(() => {
     )`);
 });
 
-// Helper function to validate user exists
 async function validateUser(userId) {
     try {
         const response = await axios.get(`http://localhost:3001/usuarios/${userId}`);
@@ -53,9 +49,6 @@ async function validateUser(userId) {
     }
 }
 
-// Routes
-
-// Create alarm
 app.post('/alarmes', (req, res) => {
     const { nome, local } = req.body;
     
@@ -85,7 +78,6 @@ app.post('/alarmes', (req, res) => {
     });
 });
 
-// Get all alarms
 app.get('/alarmes', (req, res) => {
     const query = `SELECT * FROM alarmes ORDER BY data_instalacao DESC`;
     
@@ -101,7 +93,6 @@ app.get('/alarmes', (req, res) => {
     });
 });
 
-// Get alarm by ID
 app.get('/alarmes/:id', (req, res) => {
     const { id } = req.params;
     const query = `SELECT * FROM alarmes WHERE id = ?`;
@@ -124,7 +115,6 @@ app.get('/alarmes/:id', (req, res) => {
     });
 });
 
-// Link user to alarm
 app.post('/alarmes/:id/usuarios', async (req, res) => {
     const { id: alarmeId } = req.params;
     const { usuario_id, permissao = 'usuario' } = req.body;
@@ -135,7 +125,6 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
         });
     }
 
-    // Validate user exists
     const userExists = await validateUser(usuario_id);
     if (!userExists) {
         return res.status(404).json({ 
@@ -143,7 +132,6 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
         });
     }
 
-    // Check if alarm exists
     const checkAlarmQuery = `SELECT id FROM alarmes WHERE id = ?`;
     db.get(checkAlarmQuery, [alarmeId], (err, alarm) => {
         if (err) {
@@ -159,7 +147,6 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
             });
         }
 
-        // Link user to alarm
         const linkQuery = `INSERT INTO alarme_usuarios (alarme_id, usuario_id, permissao) VALUES (?, ?, ?)`;
         
         db.run(linkQuery, [alarmeId, usuario_id, permissao], function(err) {
@@ -186,7 +173,6 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
     });
 });
 
-// Get users linked to alarm
 app.get('/alarmes/:id/usuarios', (req, res) => {
     const { id } = req.params;
     const query = `SELECT au.*, u.nome, u.celular 
@@ -206,7 +192,6 @@ app.get('/alarmes/:id/usuarios', (req, res) => {
     });
 });
 
-// Add monitoring point
 app.post('/alarmes/:id/pontos', (req, res) => {
     const { id: alarmeId } = req.params;
     const { nome, tipo } = req.body;
@@ -217,7 +202,6 @@ app.post('/alarmes/:id/pontos', (req, res) => {
         });
     }
 
-    // Check if alarm exists
     const checkAlarmQuery = `SELECT id FROM alarmes WHERE id = ?`;
     db.get(checkAlarmQuery, [alarmeId], (err, alarm) => {
         if (err) {
@@ -255,7 +239,6 @@ app.post('/alarmes/:id/pontos', (req, res) => {
     });
 });
 
-// Get monitoring points
 app.get('/alarmes/:id/pontos', (req, res) => {
     const { id } = req.params;
     const query = `SELECT * FROM pontos_monitorados WHERE alarme_id = ? ORDER BY nome`;
@@ -272,7 +255,6 @@ app.get('/alarmes/:id/pontos', (req, res) => {
     });
 });
 
-// Check user permission for alarm
 app.get('/alarmes/:id/permissao/:usuario_id', (req, res) => {
     const { id: alarmeId, usuario_id } = req.params;
     const query = `SELECT permissao FROM alarme_usuarios WHERE alarme_id = ? AND usuario_id = ?`;
@@ -300,7 +282,6 @@ app.get('/alarmes/:id/permissao/:usuario_id', (req, res) => {
     });
 });
 
-// Health check
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
@@ -309,7 +290,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
     console.error('Erro no serviço de alarmes:', err);
     res.status(500).json({ 
@@ -321,7 +301,6 @@ app.listen(PORT, () => {
     console.log(`Serviço de Cadastro de Alarmes rodando na porta ${PORT}`);
 });
 
-// Graceful shutdown
 process.on('SIGINT', () => {
     console.log('Fechando conexão com o banco de dados...');
     db.close((err) => {
@@ -333,25 +312,3 @@ process.on('SIGINT', () => {
         process.exit(0);
     });
 });
-
-// cadastro-alarmes/package.json
-/*
-{
-  "name": "cadastro-alarmes",
-  "version": "1.0.0",
-  "description": "Alarm Registration Microservice",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "sqlite3": "^5.1.6",
-    "axios": "^1.5.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  }
-}
-*/

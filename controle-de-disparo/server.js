@@ -1,4 +1,3 @@
-// controle-disparo/server.js
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const axios = require('axios');
@@ -9,11 +8,9 @@ const PORT = 3004;
 
 app.use(express.json());
 
-// Database setup
 const dbPath = path.join(__dirname, 'disparos.db');
 const db = new sqlite3.Database(dbPath);
 
-// Initialize database
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS disparos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,7 +25,6 @@ db.serialize(() => {
     )`);
 });
 
-// Helper functions
 async function checkAlarmStatus(alarmeId) {
     try {
         const response = await axios.get(`http://localhost:3003/acionamento/status/${alarmeId}`);
@@ -84,9 +80,6 @@ async function logEvent(alarmeId, usuarioId, tipoEvento, detalhes) {
     }
 }
 
-// Routes
-
-// Register alarm trigger
 app.post('/disparo', async (req, res) => {
     const { 
         alarme_id, 
@@ -102,7 +95,6 @@ app.post('/disparo', async (req, res) => {
         });
     }
 
-    // Validate alarm exists
     const alarmExists = await validateAlarm(alarme_id);
     if (!alarmExists) {
         return res.status(404).json({ 
@@ -110,7 +102,6 @@ app.post('/disparo', async (req, res) => {
         });
     }
 
-    // Check if alarm is active
     const alarmStatus = await checkAlarmStatus(alarme_id);
     if (!alarmStatus || alarmStatus.status !== 'ligado') {
         return res.status(409).json({ 
@@ -119,7 +110,6 @@ app.post('/disparo', async (req, res) => {
         });
     }
 
-    // Register the trigger
     const insertQuery = `INSERT INTO disparos 
                         (alarme_id, ponto_id, ponto_nome, tipo_disparo, detalhes) 
                         VALUES (?, ?, ?, ?, ?)`;
@@ -135,10 +125,8 @@ app.post('/disparo', async (req, res) => {
         const disparoId = this.lastID;
         const mensagemDisparo = `ALERTA: Disparo no alarme ${alarme_id} - ${ponto_nome || 'Ponto não identificado'} - Tipo: ${tipo_disparo}`;
 
-        // Log the event
         await logEvent(alarme_id, null, 'disparo', mensagemDisparo);
 
-        // Notify all users linked to this alarm
         const users = await getAlarmUsers(alarme_id);
         for (const user of users) {
             await sendNotification(alarme_id, user.usuario_id, 'disparo', mensagemDisparo);
@@ -158,12 +146,10 @@ app.post('/disparo', async (req, res) => {
     });
 });
 
-// Get triggers by alarm ID
 app.get('/disparo/:alarme_id', async (req, res) => {
     const { alarme_id } = req.params;
     const { resolvido, limit = 50 } = req.query;
     
-    // Validate alarm exists
     const alarmExists = await validateAlarm(alarme_id);
     if (!alarmExists) {
         return res.status(404).json({ 
@@ -194,11 +180,9 @@ app.get('/disparo/:alarme_id', async (req, res) => {
     });
 });
 
-// Get active triggers for alarm
 app.get('/disparo/ativo/:alarme_id', async (req, res) => {
     const { alarme_id } = req.params;
     
-    // Validate alarm exists
     const alarmExists = await validateAlarm(alarme_id);
     if (!alarmExists) {
         return res.status(404).json({ 
@@ -226,7 +210,6 @@ app.get('/disparo/ativo/:alarme_id', async (req, res) => {
     });
 });
 
-// Resolve trigger
 app.patch('/disparo/:id/resolver', async (req, res) => {
     const { id } = req.params;
     
@@ -248,7 +231,6 @@ app.patch('/disparo/:id/resolver', async (req, res) => {
             });
         }
 
-        // Get disparo details for logging
         const selectQuery = `SELECT * FROM disparos WHERE id = ?`;
         db.get(selectQuery, [id], async (err, row) => {
             if (!err && row) {
@@ -266,7 +248,6 @@ app.patch('/disparo/:id/resolver', async (req, res) => {
     });
 });
 
-// Get all triggers (admin)
 app.get('/disparo', (req, res) => {
     const { limit = 100, offset = 0 } = req.query;
     
@@ -282,7 +263,6 @@ app.get('/disparo', (req, res) => {
             });
         }
         
-        // Get total count
         db.get('SELECT COUNT(*) as total FROM disparos', [], (err, countRow) => {
             if (err) {
                 console.error('Erro ao contar disparos:', err);
@@ -301,12 +281,10 @@ app.get('/disparo', (req, res) => {
     });
 });
 
-// Get trigger statistics
 app.get('/disparo/stats/:alarme_id', async (req, res) => {
     const { alarme_id } = req.params;
     const { periodo = '30' } = req.query; // dias
     
-    // Validate alarm exists
     const alarmExists = await validateAlarm(alarme_id);
     if (!alarmExists) {
         return res.status(404).json({ 
@@ -327,7 +305,6 @@ app.get('/disparo/stats/:alarme_id', async (req, res) => {
     const stats = {};
     
     try {
-        // Execute queries in parallel
         const results = await Promise.all([
             new Promise((resolve, reject) => {
                 db.get(queries.total, [alarme_id], (err, row) => {
@@ -361,7 +338,6 @@ app.get('/disparo/stats/:alarme_id', async (req, res) => {
             })
         ]);
 
-        // Combine results
         results.forEach(result => Object.assign(stats, result));
 
         res.json({
@@ -378,7 +354,6 @@ app.get('/disparo/stats/:alarme_id', async (req, res) => {
     }
 });
 
-// Health check
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
@@ -387,7 +362,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
     console.error('Erro no serviço de disparo:', err);
     res.status(500).json({ 
@@ -399,7 +373,6 @@ app.listen(PORT, () => {
     console.log(`Serviço de Controle de Disparo rodando na porta ${PORT}`);
 });
 
-// Graceful shutdown
 process.on('SIGINT', () => {
     console.log('Fechando conexão com o banco de dados...');
     db.close((err) => {
@@ -411,25 +384,3 @@ process.on('SIGINT', () => {
         process.exit(0);
     });
 });
-
-// controle-disparo/package.json
-/*
-{
-  "name": "controle-disparo",
-  "version": "1.0.0",
-  "description": "Alarm Trigger Control Microservice",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "sqlite3": "^5.1.6",
-    "axios": "^1.5.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  }
-}
-*/  

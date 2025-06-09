@@ -8,11 +8,9 @@ const PORT = 3001;
 
 app.use(express.json());
 
-// Database setup
 const dbPath = path.join(__dirname, 'usuarios.db');
 const db = new sqlite3.Database(dbPath);
 
-// Initialize database
 db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,9 +21,6 @@ db.serialize(() => {
     )`);
 });
 
-// Routes
-
-// Create user
 app.post('/usuarios', (req, res) => {
     const { nome, celular, email } = req.body;
     
@@ -60,7 +55,6 @@ app.post('/usuarios', (req, res) => {
     });
 });
 
-// Get all users
 app.get('/usuarios', (req, res) => {
     const query = `SELECT * FROM usuarios ORDER BY data_cadastro DESC`;
     
@@ -76,7 +70,6 @@ app.get('/usuarios', (req, res) => {
     });
 });
 
-// Get user by ID
 app.get('/usuarios/:id', (req, res) => {
     const { id } = req.params;
     const query = `SELECT * FROM usuarios WHERE id = ?`;
@@ -99,7 +92,6 @@ app.get('/usuarios/:id', (req, res) => {
     });
 });
 
-// Update user
 app.put('/usuarios/:id', (req, res) => {
     const { id } = req.params;
     const { nome, celular, email } = req.body;
@@ -141,7 +133,6 @@ app.put('/usuarios/:id', (req, res) => {
     });
 });
 
-// Delete user
 app.delete('/usuarios/:id', (req, res) => {
     const { id } = req.params;
     const query = `DELETE FROM usuarios WHERE id = ?`;
@@ -166,7 +157,6 @@ app.delete('/usuarios/:id', (req, res) => {
     });
 });
 
-// Health check
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
@@ -175,7 +165,6 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Error handler
 app.use((err, req, res, next) => {
     console.error('Erro no serviço de usuários:', err);
     res.status(500).json({ 
@@ -187,7 +176,6 @@ app.listen(PORT, () => {
     console.log(`Serviço de Cadastro de Usuários rodando na porta ${PORT}`);
 });
 
-// Graceful shutdown
 process.on('SIGINT', () => {
     console.log('Fechando conexão com o banco de dados...');
     db.close((err) => {
@@ -199,24 +187,3 @@ process.on('SIGINT', () => {
         process.exit(0);
     });
 });
-
-// cadastro-usuarios/package.json
-/*
-{
-  "name": "cadastro-usuarios",
-  "version": "1.0.0",
-  "description": "User Registration Microservice",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "sqlite3": "^5.1.6"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.1"
-  }
-}
-*/
