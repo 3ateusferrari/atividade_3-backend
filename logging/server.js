@@ -4,16 +4,16 @@ const cors = require('cors');
 const path = require('path');
 
 const app = express();
-const PORT = 3006;
+const PORTA = 3006;
 
 app.use(cors());
 app.use(express.json());
 
-const dbPath = path.join(__dirname, 'logs.db');
-const db = new sqlite3.Database(dbPath);
+const caminhoBanco = path.join(__dirname, 'logs.db');
+const banco = new sqlite3.Database(caminhoBanco);
 
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS logs (
+banco.serialize(() => {
+    banco.run(`CREATE TABLE IF NOT EXISTS logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         alarme_id INTEGER,
         usuario_id INTEGER,
@@ -25,29 +25,29 @@ db.serialize(() => {
 
 app.post('/logs', (req, res) => {
     const { alarme_id, usuario_id, tipo_evento, detalhes } = req.body;
-    const query = `INSERT INTO logs (alarme_id, usuario_id, tipo_evento, detalhes) VALUES (?, ?, ?, ?)`;
-    db.run(query, [alarme_id, usuario_id, tipo_evento, detalhes], function(err) {
-        if (err) {
-            console.error('Erro ao registrar log:', err);
-            return res.status(500).json({ error: 'Erro ao registrar log' });
+    const consulta = `INSERT INTO logs (alarme_id, usuario_id, tipo_evento, detalhes) VALUES (?, ?, ?, ?)`;
+    banco.run(consulta, [alarme_id, usuario_id, tipo_evento, detalhes], function(erro) {
+        if (erro) {
+            console.error('Erro ao registrar log:', erro);
+            return res.status(500).json({ erro: 'Erro ao registrar log' });
         }
         res.status(201).json({ id: this.lastID, alarme_id, usuario_id, tipo_evento, detalhes });
     });
 });
 
 app.get('/logs', (req, res) => {
-    db.all('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 100', [], (err, rows) => {
-        if (err) {
-            return res.status(500).json({ error: 'Erro ao buscar logs' });
+    banco.all('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 100', [], (erro, linhas) => {
+        if (erro) {
+            return res.status(500).json({ erro: 'Erro ao buscar logs' });
         }
-        res.json(rows);
+        res.json(linhas);
     });
 });
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'OK', service: 'logging', timestamp: new Date().toISOString() });
+    res.json({ status: 'OK', servico: 'logging', horario: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`Serviço de Logging rodando na porta ${PORT}`);
+app.listen(PORTA, () => {
+    console.log(`Serviço de Logging rodando na porta ${PORTA}`);
 }); 

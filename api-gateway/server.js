@@ -3,7 +3,7 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
 
 const app = express();
-const PORT = 3000;
+const PORTA = 3000;
 
 app.use(cors());
 app.use(express.json());
@@ -13,7 +13,7 @@ app.use((req, res, next) => {
     next();
 });
 
-const services = {
+const servicos = {
     usuarios: 'http://localhost:3001',
     alarmes: 'http://localhost:3002',
     acionamento: 'http://localhost:3003',
@@ -22,18 +22,18 @@ const services = {
     logs: 'http://localhost:3006'
 };
 
-Object.keys(services).forEach(service => {
-    app.use(`/api/${service}`, createProxyMiddleware({
-        target: services[service],
+Object.keys(servicos).forEach(servico => {
+    app.use(`/api/${servico}`, createProxyMiddleware({
+        target: servicos[servico],
         changeOrigin: true,
         pathRewrite: {
-            [`^/api/${service}`]: ''
+            [`^/api/${servico}`]: ''
         },
-        onError: (err, req, res) => {
-            console.error(`Proxy error for ${service}:`, err.message);
+        onError: (erro, req, res) => {
+            console.error(`Erro de proxy para ${servico}:`, erro.message);
             res.status(503).json({ 
-                error: 'Service Unavailable', 
-                message: `${service} service is not available` 
+                erro: 'Serviço Indisponível', 
+                mensagem: `O serviço ${servico} não está disponível` 
             });
         }
     }));
@@ -42,15 +42,15 @@ Object.keys(services).forEach(service => {
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
-        timestamp: new Date().toISOString(),
-        services: Object.keys(services)
+        horario: new Date().toISOString(),
+        servicos: Object.keys(servicos)
     });
 });
 
 app.get('/', (req, res) => {
     res.json({
-        message: 'Sistema de Controle de Alarmes - API Gateway',
-        version: '1.0.0',
+        mensagem: 'Sistema de Controle de Alarmes - API Gateway',
+        versao: '1.0.0',
         endpoints: {
             usuarios: '/api/usuarios',
             alarmes: '/api/alarmes',
@@ -62,18 +62,18 @@ app.get('/', (req, res) => {
     });
 });
 
-app.use((err, req, res, next) => {
-    console.error('Gateway error:', err);
+app.use((erro, req, res, next) => {
+    console.error('Erro no gateway:', erro);
     res.status(500).json({ 
-        error: 'Internal Server Error',
-        message: 'Gateway error occurred'
+        erro: 'Erro Interno do Servidor',
+        mensagem: 'Ocorreu um erro no gateway'
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`API Gateway running on port ${PORT}`);
-    console.log('Available routes:');
-    Object.keys(services).forEach(service => {
-        console.log(`  /api/${service} -> ${services[service]}`);
+app.listen(PORTA, () => {
+    console.log(`API Gateway rodando na porta ${PORTA}`);
+    console.log('Rotas disponíveis:');
+    Object.keys(servicos).forEach(servico => {
+        console.log(`  /api/${servico} -> ${servicos[servico]}`);
     });
 });

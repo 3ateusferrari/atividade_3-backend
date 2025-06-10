@@ -3,71 +3,71 @@ const axios = require('axios');
 const cors = require('cors');
 
 const app = express();
-const PORT = 3003;
+const PORTA = 3003;
 
 app.use(cors());
 app.use(express.json());
 
-const alarmesStatus = {};
+const statusAlarmes = {};
 
-app.post('/acionar/:alarme_id', async (req, res) => {
-    const { alarme_id } = req.params;
+app.post('/acionar/:id_alarme', async (req, res) => {
+    const { id_alarme } = req.params;
     try {
-        const alarme = await axios.get(`http://localhost:3002/alarmes/${alarme_id}`);
+        const alarme = await axios.get(`http://localhost:3002/alarmes/${id_alarme}`);
         if (!alarme.data) {
-            return res.status(404).json({ error: 'Alarme não encontrado' });
+            return res.status(404).json({ erro: 'Alarme não encontrado' });
         }
-        alarmesStatus[alarme_id] = 'ligado';
+        statusAlarmes[id_alarme] = 'ligado';
         await axios.post('http://localhost:3006/logs', {
-            alarme_id,
+            alarme_id: id_alarme,
             tipo_evento: 'acionamento',
             detalhes: 'Alarme armado'
         });
         await axios.post('http://localhost:3005/notificacao/enviar', {
-            alarme_id,
+            alarme_id: id_alarme,
             tipo: 'acionamento',
             mensagem: 'O alarme foi armado.'
         });
-        res.json({ alarme_id, status: 'ligado', message: 'Alarme armado com sucesso' });
-    } catch (err) {
-        res.status(500).json({ error: 'Erro ao armar alarme' });
+        res.json({ id_alarme, situacao: 'ligado', mensagem: 'Alarme armado com sucesso' });
+    } catch (erro) {
+        res.status(500).json({ erro: 'Erro ao armar alarme' });
     }
 });
 
-app.post('/desarmar/:alarme_id', async (req, res) => {
-    const { alarme_id } = req.params;
+app.post('/desarmar/:id_alarme', async (req, res) => {
+    const { id_alarme } = req.params;
     try {
-        const alarme = await axios.get(`http://localhost:3002/alarmes/${alarme_id}`);
+        const alarme = await axios.get(`http://localhost:3002/alarmes/${id_alarme}`);
         if (!alarme.data) {
-            return res.status(404).json({ error: 'Alarme não encontrado' });
+            return res.status(404).json({ erro: 'Alarme não encontrado' });
         }
-        alarmesStatus[alarme_id] = 'desligado';
+        statusAlarmes[id_alarme] = 'desligado';
         await axios.post('http://localhost:3006/logs', {
-            alarme_id,
+            alarme_id: id_alarme,
             tipo_evento: 'desligamento',
             detalhes: 'Alarme desarmado'
         });
         await axios.post('http://localhost:3005/notificacao/enviar', {
-            alarme_id,
+            alarme_id: id_alarme,
             tipo: 'desligamento',
             mensagem: 'O alarme foi desarmado.'
         });
-        res.json({ alarme_id, status: 'desligado', message: 'Alarme desarmado com sucesso' });
-    } catch (err) {
-        res.status(500).json({ error: 'Erro ao desarmar alarme' });
+        res.json({ id_alarme, situacao: 'desligado', mensagem: 'Alarme desarmado com sucesso' });
+    } catch (erro) {
+        res.status(500).json({ erro: 'Erro ao desarmar alarme' });
     }
 });
 
-app.get('/status/:alarme_id', (req, res) => {
-    const { alarme_id } = req.params;
-    const status = alarmesStatus[alarme_id] || 'desligado';
-    res.json({ alarme_id, status });
+app.get('/status/:id_alarme', (req, res) => {
+    const { id_alarme } = req.params;
+    const situacao = statusAlarmes[id_alarme] || 'desligado';
+    res.json({ id_alarme, situacao });
 });
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'OK', service: 'controle-acionamento', timestamp: new Date().toISOString() });
+    res.json({ status: 'OK', servico: 'controle-acionamento', horario: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`Serviço de Controle de Acionamento rodando na porta ${PORT}`);
+app.listen(PORTA, () => {
+    console.log(`Serviço de Controle de Acionamento rodando na porta ${PORTA}`);
 }); 

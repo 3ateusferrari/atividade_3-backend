@@ -4,15 +4,15 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
 const app = express();
-const PORT = 3001;
+const PORTA = 3001;
 
 app.use(express.json());
 
-const dbPath = path.join(__dirname, 'usuarios.db');
-const db = new sqlite3.Database(dbPath);
+const caminhoBanco = path.join(__dirname, 'usuarios.db');
+const banco = new sqlite3.Database(caminhoBanco);
 
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS usuarios (
+banco.serialize(() => {
+    banco.run(`CREATE TABLE IF NOT EXISTS usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome TEXT NOT NULL,
         celular TEXT NOT NULL UNIQUE,
@@ -26,22 +26,22 @@ app.post('/usuarios', (req, res) => {
     
     if (!nome || !celular) {
         return res.status(400).json({ 
-            error: 'Nome e celular são obrigatórios' 
+            erro: 'Nome e celular são obrigatórios' 
         });
     }
 
-    const query = `INSERT INTO usuarios (nome, celular, email) VALUES (?, ?, ?)`;
+    const consulta = `INSERT INTO usuarios (nome, celular, email) VALUES (?, ?, ?)`;
     
-    db.run(query, [nome, celular, email], function(err) {
-        if (err) {
-            if (err.code === 'SQLITE_CONSTRAINT') {
+    banco.run(consulta, [nome, celular, email], function(erro) {
+        if (erro) {
+            if (erro.code === 'SQLITE_CONSTRAINT') {
                 return res.status(409).json({ 
-                    error: 'Celular já cadastrado' 
+                    erro: 'Celular já cadastrado' 
                 });
             }
-            console.error('Erro ao criar usuário:', err);
+            console.error('Erro ao criar usuário:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
@@ -50,45 +50,45 @@ app.post('/usuarios', (req, res) => {
             nome,
             celular,
             email,
-            message: 'Usuário criado com sucesso'
+            mensagem: 'Usuário criado com sucesso'
         });
     });
 });
 
 app.get('/usuarios', (req, res) => {
-    const query = `SELECT * FROM usuarios ORDER BY data_cadastro DESC`;
+    const consulta = `SELECT * FROM usuarios ORDER BY data_cadastro DESC`;
     
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error('Erro ao buscar usuários:', err);
+    banco.all(consulta, [], (erro, linhas) => {
+        if (erro) {
+            console.error('Erro ao buscar usuários:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        res.json(rows);
+        res.json(linhas);
     });
 });
 
 app.get('/usuarios/:id', (req, res) => {
     const { id } = req.params;
-    const query = `SELECT * FROM usuarios WHERE id = ?`;
+    const consulta = `SELECT * FROM usuarios WHERE id = ?`;
     
-    db.get(query, [id], (err, row) => {
-        if (err) {
-            console.error('Erro ao buscar usuário:', err);
+    banco.get(consulta, [id], (erro, linha) => {
+        if (erro) {
+            console.error('Erro ao buscar usuário:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        if (!row) {
+        if (!linha) {
             return res.status(404).json({ 
-                error: 'Usuário não encontrado' 
+                erro: 'Usuário não encontrado' 
             });
         }
         
-        res.json(row);
+        res.json(linha);
     });
 });
 
@@ -98,28 +98,28 @@ app.put('/usuarios/:id', (req, res) => {
     
     if (!nome || !celular) {
         return res.status(400).json({ 
-            error: 'Nome e celular são obrigatórios' 
+            erro: 'Nome e celular são obrigatórios' 
         });
     }
 
-    const query = `UPDATE usuarios SET nome = ?, celular = ?, email = ? WHERE id = ?`;
+    const consulta = `UPDATE usuarios SET nome = ?, celular = ?, email = ? WHERE id = ?`;
     
-    db.run(query, [nome, celular, email, id], function(err) {
-        if (err) {
-            if (err.code === 'SQLITE_CONSTRAINT') {
+    banco.run(consulta, [nome, celular, email, id], function(erro) {
+        if (erro) {
+            if (erro.code === 'SQLITE_CONSTRAINT') {
                 return res.status(409).json({ 
-                    error: 'Celular já cadastrado para outro usuário' 
+                    erro: 'Celular já cadastrado para outro usuário' 
                 });
             }
-            console.error('Erro ao atualizar usuário:', err);
+            console.error('Erro ao atualizar usuário:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
         if (this.changes === 0) {
             return res.status(404).json({ 
-                error: 'Usuário não encontrado' 
+                erro: 'Usuário não encontrado' 
             });
         }
         
@@ -128,31 +128,31 @@ app.put('/usuarios/:id', (req, res) => {
             nome,
             celular,
             email,
-            message: 'Usuário atualizado com sucesso'
+            mensagem: 'Usuário atualizado com sucesso'
         });
     });
 });
 
 app.delete('/usuarios/:id', (req, res) => {
     const { id } = req.params;
-    const query = `DELETE FROM usuarios WHERE id = ?`;
+    const consulta = `DELETE FROM usuarios WHERE id = ?`;
     
-    db.run(query, [id], function(err) {
-        if (err) {
-            console.error('Erro ao deletar usuário:', err);
+    banco.run(consulta, [id], function(erro) {
+        if (erro) {
+            console.error('Erro ao deletar usuário:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
         if (this.changes === 0) {
             return res.status(404).json({ 
-                error: 'Usuário não encontrado' 
+                erro: 'Usuário não encontrado' 
             });
         }
         
         res.json({ 
-            message: 'Usuário deletado com sucesso' 
+            mensagem: 'Usuário deletado com sucesso' 
         });
     });
 });
@@ -160,27 +160,27 @@ app.delete('/usuarios/:id', (req, res) => {
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
-        service: 'cadastro-usuarios',
-        timestamp: new Date().toISOString() 
+        servico: 'cadastro-usuarios',
+        horario: new Date().toISOString() 
     });
 });
 
-app.use((err, req, res, next) => {
-    console.error('Erro no serviço de usuários:', err);
+app.use((erro, req, res, next) => {
+    console.error('Erro no serviço de usuários:', erro);
     res.status(500).json({ 
-        error: 'Erro interno do servidor' 
+        erro: 'Erro interno do servidor' 
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`Serviço de Cadastro de Usuários rodando na porta ${PORT}`);
+app.listen(PORTA, () => {
+    console.log(`Serviço de Cadastro de Usuários rodando na porta ${PORTA}`);
 });
 
 process.on('SIGINT', () => {
     console.log('Fechando conexão com o banco de dados...');
-    db.close((err) => {
-        if (err) {
-            console.error('Erro ao fechar banco:', err);
+    banco.close((erro) => {
+        if (erro) {
+            console.error('Erro ao fechar banco:', erro);
         } else {
             console.log('Conexão com banco fechada.');
         }

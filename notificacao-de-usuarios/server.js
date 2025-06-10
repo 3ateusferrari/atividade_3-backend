@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
-const PORT = 3005;
+const PORTA = 3005;
 
 app.use(cors());
 app.use(express.json());
@@ -14,9 +14,9 @@ app.post('/notificacao/enviar', (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'OK', service: 'notificacao-usuarios', timestamp: new Date().toISOString() });
+    res.json({ status: 'OK', servico: 'notificacao-usuarios', horario: new Date().toISOString() });
 });
 
-app.listen(PORT, () => {
-    console.log(`Serviço de Notificação de Usuários rodando na porta ${PORT}`);
+app.listen(PORTA, () => {
+    console.log(`Serviço de Notificação de Usuários rodando na porta ${PORTA}`);
 }); 

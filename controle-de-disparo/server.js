@@ -4,15 +4,15 @@ const axios = require('axios');
 const path = require('path');
 
 const app = express();
-const PORT = 3004;
+const PORTA = 3004;
 
 app.use(express.json());
 
-const dbPath = path.join(__dirname, 'disparos.db');
-const db = new sqlite3.Database(dbPath);
+const caminhoBanco = path.join(__dirname, 'disparos.db');
+const banco = new sqlite3.Database(caminhoBanco);
 
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS disparos (
+banco.serialize(() => {
+    banco.run(`CREATE TABLE IF NOT EXISTS disparos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         alarme_id INTEGER NOT NULL,
         ponto_id INTEGER,
@@ -25,58 +25,58 @@ db.serialize(() => {
     )`);
 });
 
-async function checkAlarmStatus(alarmeId) {
+async function verificarStatusAlarme(idAlarme) {
     try {
-        const response = await axios.get(`http://localhost:3003/acionamento/status/${alarmeId}`);
-        return response.data;
-    } catch (error) {
-        console.error('Erro ao verificar status do alarme:', error.message);
+        const resposta = await axios.get(`http://localhost:3003/acionamento/status/${idAlarme}`);
+        return resposta.data;
+    } catch (erro) {
+        console.error('Erro ao verificar status do alarme:', erro.message);
         return null;
     }
 }
 
-async function validateAlarm(alarmeId) {
+async function validarAlarme(idAlarme) {
     try {
-        const response = await axios.get(`http://localhost:3002/alarmes/${alarmeId}`);
-        return response.status === 200;
-    } catch (error) {
+        const resposta = await axios.get(`http://localhost:3002/alarmes/${idAlarme}`);
+        return resposta.status === 200;
+    } catch (erro) {
         return false;
     }
 }
 
-async function getAlarmUsers(alarmeId) {
+async function buscarUsuariosAlarme(idAlarme) {
     try {
-        const response = await axios.get(`http://localhost:3002/alarmes/${alarmeId}/usuarios`);
-        return response.data;
-    } catch (error) {
-        console.error('Erro ao buscar usuários do alarme:', error.message);
+        const resposta = await axios.get(`http://localhost:3002/alarmes/${idAlarme}/usuarios`);
+        return resposta.data;
+    } catch (erro) {
+        console.error('Erro ao buscar usuários do alarme:', erro.message);
         return [];
     }
 }
 
-async function sendNotification(alarmeId, usuarioId, tipoEvento, detalhes) {
+async function enviarNotificacao(idAlarme, idUsuario, tipoEvento, detalhes) {
     try {
         await axios.post('http://localhost:3005/notificacao/enviar', {
-            alarme_id: alarmeId,
-            usuario_id: usuarioId,
+            alarme_id: idAlarme,
+            usuario_id: idUsuario,
             tipo: tipoEvento,
             mensagem: detalhes
         });
-    } catch (error) {
-        console.error('Erro ao enviar notificação:', error.message);
+    } catch (erro) {
+        console.error('Erro ao enviar notificação:', erro.message);
     }
 }
 
-async function logEvent(alarmeId, usuarioId, tipoEvento, detalhes) {
+async function registrarLog(idAlarme, idUsuario, tipoEvento, detalhes) {
     try {
         await axios.post('http://localhost:3006/logs', {
-            alarme_id: alarmeId,
-            usuario_id: usuarioId,
+            alarme_id: idAlarme,
+            usuario_id: idUsuario,
             tipo_evento: tipoEvento,
             detalhes: detalhes
         });
-    } catch (error) {
-        console.error('Erro ao registrar log:', error.message);
+    } catch (erro) {
+        console.error('Erro ao registrar log:', erro.message);
     }
 }
 
@@ -91,49 +91,49 @@ app.post('/disparo', async (req, res) => {
     
     if (!alarme_id) {
         return res.status(400).json({ 
-            error: 'ID do alarme é obrigatório' 
+            erro: 'ID do alarme é obrigatório' 
         });
     }
 
-    const alarmExists = await validateAlarm(alarme_id);
-    if (!alarmExists) {
+    const alarmeExiste = await validarAlarme(alarme_id);
+    if (!alarmeExiste) {
         return res.status(404).json({ 
-            error: 'Alarme não encontrado' 
+            erro: 'Alarme não encontrado' 
         });
     }
 
-    const alarmStatus = await checkAlarmStatus(alarme_id);
-    if (!alarmStatus || alarmStatus.status !== 'ligado') {
+    const statusAlarme = await verificarStatusAlarme(alarme_id);
+    if (!statusAlarme || statusAlarme.situacao !== 'ligado') {
         return res.status(409).json({ 
-            error: 'Alarme não está ativo',
-            status_atual: alarmStatus ? alarmStatus.status : 'desconhecido'
+            erro: 'Alarme não está ativo',
+            status_atual: statusAlarme ? statusAlarme.situacao : 'desconhecido'
         });
     }
 
-    const insertQuery = `INSERT INTO disparos 
+    const consulta = `INSERT INTO disparos 
                         (alarme_id, ponto_id, ponto_nome, tipo_disparo, detalhes) 
                         VALUES (?, ?, ?, ?, ?)`;
     
-    db.run(insertQuery, [alarme_id, ponto_id, ponto_nome, tipo_disparo, detalhes], async function(err) {
-        if (err) {
-            console.error('Erro ao registrar disparo:', err);
+    banco.run(consulta, [alarme_id, ponto_id, ponto_nome, tipo_disparo, detalhes], async function(erro) {
+        if (erro) {
+            console.error('Erro ao registrar disparo:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
 
-        const disparoId = this.lastID;
+        const idDisparo = this.lastID;
         const mensagemDisparo = `ALERTA: Disparo no alarme ${alarme_id} - ${ponto_nome || 'Ponto não identificado'} - Tipo: ${tipo_disparo}`;
 
-        await logEvent(alarme_id, null, 'disparo', mensagemDisparo);
+        await registrarLog(alarme_id, null, 'disparo', mensagemDisparo);
 
-        const users = await getAlarmUsers(alarme_id);
-        for (const user of users) {
-            await sendNotification(alarme_id, user.usuario_id, 'disparo', mensagemDisparo);
+        const usuarios = await buscarUsuariosAlarme(alarme_id);
+        for (const usuario of usuarios) {
+            await enviarNotificacao(alarme_id, usuario.usuario_id, 'disparo', mensagemDisparo);
         }
 
         res.status(201).json({
-            id: disparoId,
+            id: idDisparo,
             alarme_id: parseInt(alarme_id),
             ponto_id: ponto_id,
             ponto_nome,
@@ -141,7 +141,7 @@ app.post('/disparo', async (req, res) => {
             timestamp_disparo: new Date().toISOString(),
             resolvido: false,
             detalhes,
-            message: 'Disparo registrado e notificações enviadas'
+            mensagem: 'Disparo registrado e notificações enviadas'
         });
     });
 });
@@ -150,62 +150,62 @@ app.get('/disparo/:alarme_id', async (req, res) => {
     const { alarme_id } = req.params;
     const { resolvido, limit = 50 } = req.query;
     
-    const alarmExists = await validateAlarm(alarme_id);
-    if (!alarmExists) {
+    const alarmeExiste = await validarAlarme(alarme_id);
+    if (!alarmeExiste) {
         return res.status(404).json({ 
-            error: 'Alarme não encontrado' 
+            erro: 'Alarme não encontrado' 
         });
     }
 
-    let query = `SELECT * FROM disparos WHERE alarme_id = ?`;
-    let queryParams = [alarme_id];
+    let consulta = `SELECT * FROM disparos WHERE alarme_id = ?`;
+    let parametros = [alarme_id];
 
     if (resolvido !== undefined) {
-        query += ` AND resolvido = ?`;
-        queryParams.push(resolvido === 'true' ? 1 : 0);
+        consulta += ` AND resolvido = ?`;
+        parametros.push(resolvido === 'true' ? 1 : 0);
     }
 
-    query += ` ORDER BY timestamp_disparo DESC LIMIT ?`;
-    queryParams.push(parseInt(limit));
+    consulta += ` ORDER BY timestamp_disparo DESC LIMIT ?`;
+    parametros.push(parseInt(limit));
     
-    db.all(query, queryParams, (err, rows) => {
-        if (err) {
-            console.error('Erro ao buscar disparos:', err);
+    banco.all(consulta, parametros, (erro, linhas) => {
+        if (erro) {
+            console.error('Erro ao buscar disparos:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        res.json(rows);
+        res.json(linhas);
     });
 });
 
 app.get('/disparo/ativo/:alarme_id', async (req, res) => {
     const { alarme_id } = req.params;
     
-    const alarmExists = await validateAlarm(alarme_id);
-    if (!alarmExists) {
+    const alarmeExiste = await validarAlarme(alarme_id);
+    if (!alarmeExiste) {
         return res.status(404).json({ 
-            error: 'Alarme não encontrado' 
+            erro: 'Alarme não encontrado' 
         });
     }
 
-    const query = `SELECT * FROM disparos 
+    const consulta = `SELECT * FROM disparos 
                    WHERE alarme_id = ? AND resolvido = 0 
                    ORDER BY timestamp_disparo DESC`;
     
-    db.all(query, [alarme_id], (err, rows) => {
-        if (err) {
-            console.error('Erro ao buscar disparos ativos:', err);
+    banco.all(consulta, [alarme_id], (erro, linhas) => {
+        if (erro) {
+            console.error('Erro ao buscar disparos ativos:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
         res.json({
             alarme_id: parseInt(alarme_id),
-            disparos_ativos: rows.length,
-            disparos: rows
+            disparos_ativos: linhas.length,
+            disparos: linhas
         });
     });
 });
@@ -213,28 +213,28 @@ app.get('/disparo/ativo/:alarme_id', async (req, res) => {
 app.patch('/disparo/:id/resolver', async (req, res) => {
     const { id } = req.params;
     
-    const updateQuery = `UPDATE disparos 
+    const consulta = `UPDATE disparos 
                         SET resolvido = 1, timestamp_resolucao = CURRENT_TIMESTAMP 
                         WHERE id = ?`;
     
-    db.run(updateQuery, [id], async function(err) {
-        if (err) {
-            console.error('Erro ao resolver disparo:', err);
+    banco.run(consulta, [id], async function(erro) {
+        if (erro) {
+            console.error('Erro ao resolver disparo:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
         if (this.changes === 0) {
             return res.status(404).json({ 
-                error: 'Disparo não encontrado' 
+                erro: 'Disparo não encontrado' 
             });
         }
 
-        const selectQuery = `SELECT * FROM disparos WHERE id = ?`;
-        db.get(selectQuery, [id], async (err, row) => {
-            if (!err && row) {
-                await logEvent(row.alarme_id, null, 'disparo_resolvido', 
+        const consultaBusca = `SELECT * FROM disparos WHERE id = ?`;
+        banco.get(consultaBusca, [id], async (erro, linha) => {
+            if (!erro && linha) {
+                await registrarLog(linha.alarme_id, null, 'disparo_resolvido', 
                     `Disparo ${id} foi marcado como resolvido`);
             }
         });
@@ -243,141 +243,35 @@ app.patch('/disparo/:id/resolver', async (req, res) => {
             id: parseInt(id),
             resolvido: true,
             timestamp_resolucao: new Date().toISOString(),
-            message: 'Disparo marcado como resolvido'
+            mensagem: 'Disparo marcado como resolvido'
         });
     });
-});
-
-app.get('/disparo', (req, res) => {
-    const { limit = 100, offset = 0 } = req.query;
-    
-    const query = `SELECT * FROM disparos 
-                   ORDER BY timestamp_disparo DESC 
-                   LIMIT ? OFFSET ?`;
-    
-    db.all(query, [parseInt(limit), parseInt(offset)], (err, rows) => {
-        if (err) {
-            console.error('Erro ao buscar todos os disparos:', err);
-            return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
-            });
-        }
-        
-        db.get('SELECT COUNT(*) as total FROM disparos', [], (err, countRow) => {
-            if (err) {
-                console.error('Erro ao contar disparos:', err);
-                return res.status(500).json({ 
-                    error: 'Erro interno do servidor' 
-                });
-            }
-            
-            res.json({
-                disparos: rows,
-                total: countRow.total,
-                limit: parseInt(limit),
-                offset: parseInt(offset)
-            });
-        });
-    });
-});
-
-app.get('/disparo/stats/:alarme_id', async (req, res) => {
-    const { alarme_id } = req.params;
-    const { periodo = '30' } = req.query; // dias
-    
-    const alarmExists = await validateAlarm(alarme_id);
-    if (!alarmExists) {
-        return res.status(404).json({ 
-            error: 'Alarme não encontrado' 
-        });
-    }
-
-    const queries = {
-        total: `SELECT COUNT(*) as count FROM disparos WHERE alarme_id = ?`,
-        periodo: `SELECT COUNT(*) as count FROM disparos 
-                 WHERE alarme_id = ? AND timestamp_disparo >= datetime('now', '-${periodo} days')`,
-        resolvidos: `SELECT COUNT(*) as count FROM disparos WHERE alarme_id = ? AND resolvido = 1`,
-        ativos: `SELECT COUNT(*) as count FROM disparos WHERE alarme_id = ? AND resolvido = 0`,
-        tipos: `SELECT tipo_disparo, COUNT(*) as count FROM disparos 
-               WHERE alarme_id = ? GROUP BY tipo_disparo`
-    };
-
-    const stats = {};
-    
-    try {
-        const results = await Promise.all([
-            new Promise((resolve, reject) => {
-                db.get(queries.total, [alarme_id], (err, row) => {
-                    if (err) reject(err);
-                    else resolve({ total: row.count });
-                });
-            }),
-            new Promise((resolve, reject) => {
-                db.get(queries.periodo, [alarme_id], (err, row) => {
-                    if (err) reject(err);
-                    else resolve({ periodo: row.count });
-                });
-            }),
-            new Promise((resolve, reject) => {
-                db.get(queries.resolvidos, [alarme_id], (err, row) => {
-                    if (err) reject(err);
-                    else resolve({ resolvidos: row.count });
-                });
-            }),
-            new Promise((resolve, reject) => {
-                db.get(queries.ativos, [alarme_id], (err, row) => {
-                    if (err) reject(err);
-                    else resolve({ ativos: row.count });
-                });
-            }),
-            new Promise((resolve, reject) => {
-                db.all(queries.tipos, [alarme_id], (err, rows) => {
-                    if (err) reject(err);
-                    else resolve({ tipos: rows });
-                });
-            })
-        ]);
-
-        results.forEach(result => Object.assign(stats, result));
-
-        res.json({
-            alarme_id: parseInt(alarme_id),
-            periodo_dias: parseInt(periodo),
-            ...stats
-        });
-
-    } catch (error) {
-        console.error('Erro ao buscar estatísticas:', error);
-        res.status(500).json({ 
-            error: 'Erro interno do servidor' 
-        });
-    }
 });
 
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
-        service: 'controle-disparo',
-        timestamp: new Date().toISOString() 
+        servico: 'controle-disparo',
+        horario: new Date().toISOString() 
     });
 });
 
-app.use((err, req, res, next) => {
-    console.error('Erro no serviço de disparo:', err);
+app.use((erro, req, res, next) => {
+    console.error('Erro no serviço de disparo:', erro);
     res.status(500).json({ 
-        error: 'Erro interno do servidor' 
+        erro: 'Erro interno do servidor' 
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`Serviço de Controle de Disparo rodando na porta ${PORT}`);
+app.listen(PORTA, () => {
+    console.log(`Serviço de Controle de Disparo rodando na porta ${PORTA}`);
 });
 
 process.on('SIGINT', () => {
     console.log('Fechando conexão com o banco de dados...');
-    db.close((err) => {
-        if (err) {
-            console.error('Erro ao fechar banco:', err);
+    banco.close((erro) => {
+        if (erro) {
+            console.error('Erro ao fechar banco:', erro);
         } else {
             console.log('Conexão com banco fechada.');
         }

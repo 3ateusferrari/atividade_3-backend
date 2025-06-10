@@ -4,15 +4,15 @@ const axios = require('axios');
 const path = require('path');
 
 const app = express();
-const PORT = 3002;
+const PORTA = 3002;
 
 app.use(express.json());
 
-const dbPath = path.join(__dirname, 'alarmes.db');
-const db = new sqlite3.Database(dbPath);
+const caminhoBanco = path.join(__dirname, 'alarmes.db');
+const banco = new sqlite3.Database(caminhoBanco);
 
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS alarmes (
+banco.serialize(() => {
+    banco.run(`CREATE TABLE IF NOT EXISTS alarmes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         nome TEXT NOT NULL,
         local TEXT NOT NULL,
@@ -20,7 +20,7 @@ db.serialize(() => {
         status TEXT DEFAULT 'desligado'
     )`);
     
-    db.run(`CREATE TABLE IF NOT EXISTS alarme_usuarios (
+    banco.run(`CREATE TABLE IF NOT EXISTS alarme_usuarios (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         alarme_id INTEGER,
         usuario_id INTEGER,
@@ -30,7 +30,7 @@ db.serialize(() => {
         UNIQUE(alarme_id, usuario_id)
     )`);
     
-    db.run(`CREATE TABLE IF NOT EXISTS pontos_monitorados (
+    banco.run(`CREATE TABLE IF NOT EXISTS pontos_monitorados (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         alarme_id INTEGER,
         nome TEXT NOT NULL,
@@ -40,11 +40,11 @@ db.serialize(() => {
     )`);
 });
 
-async function validateUser(userId) {
+async function validarUsuario(idUsuario) {
     try {
-        const response = await axios.get(`http://localhost:3001/usuarios/${userId}`);
-        return response.status === 200;
-    } catch (error) {
+        const resposta = await axios.get(`http://localhost:3001/usuarios/${idUsuario}`);
+        return resposta.status === 200;
+    } catch (erro) {
         return false;
     }
 }
@@ -54,17 +54,17 @@ app.post('/alarmes', (req, res) => {
     
     if (!nome || !local) {
         return res.status(400).json({ 
-            error: 'Nome e local são obrigatórios' 
+            erro: 'Nome e local são obrigatórios' 
         });
     }
 
-    const query = `INSERT INTO alarmes (nome, local) VALUES (?, ?)`;
+    const consulta = `INSERT INTO alarmes (nome, local) VALUES (?, ?)`;
     
-    db.run(query, [nome, local], function(err) {
-        if (err) {
-            console.error('Erro ao criar alarme:', err);
+    banco.run(consulta, [nome, local], function(erro) {
+        if (erro) {
+            console.error('Erro ao criar alarme:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
@@ -73,101 +73,101 @@ app.post('/alarmes', (req, res) => {
             nome,
             local,
             status: 'desligado',
-            message: 'Alarme criado com sucesso'
+            mensagem: 'Alarme criado com sucesso'
         });
     });
 });
 
 app.get('/alarmes', (req, res) => {
-    const query = `SELECT * FROM alarmes ORDER BY data_instalacao DESC`;
+    const consulta = `SELECT * FROM alarmes ORDER BY data_instalacao DESC`;
     
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            console.error('Erro ao buscar alarmes:', err);
+    banco.all(consulta, [], (erro, linhas) => {
+        if (erro) {
+            console.error('Erro ao buscar alarmes:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        res.json(rows);
+        res.json(linhas);
     });
 });
 
 app.get('/alarmes/:id', (req, res) => {
     const { id } = req.params;
-    const query = `SELECT * FROM alarmes WHERE id = ?`;
+    const consulta = `SELECT * FROM alarmes WHERE id = ?`;
     
-    db.get(query, [id], (err, row) => {
-        if (err) {
-            console.error('Erro ao buscar alarme:', err);
+    banco.get(consulta, [id], (erro, linha) => {
+        if (erro) {
+            console.error('Erro ao buscar alarme:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        if (!row) {
+        if (!linha) {
             return res.status(404).json({ 
-                error: 'Alarme não encontrado' 
+                erro: 'Alarme não encontrado' 
             });
         }
         
-        res.json(row);
+        res.json(linha);
     });
 });
 
 app.post('/alarmes/:id/usuarios', async (req, res) => {
-    const { id: alarmeId } = req.params;
+    const { id: idAlarme } = req.params;
     const { usuario_id, permissao = 'usuario' } = req.body;
     
     if (!usuario_id) {
         return res.status(400).json({ 
-            error: 'ID do usuário é obrigatório' 
+            erro: 'ID do usuário é obrigatório' 
         });
     }
 
-    const userExists = await validateUser(usuario_id);
-    if (!userExists) {
+    const usuarioExiste = await validarUsuario(usuario_id);
+    if (!usuarioExiste) {
         return res.status(404).json({ 
-            error: 'Usuário não encontrado' 
+            erro: 'Usuário não encontrado' 
         });
     }
 
-    const checkAlarmQuery = `SELECT id FROM alarmes WHERE id = ?`;
-    db.get(checkAlarmQuery, [alarmeId], (err, alarm) => {
-        if (err) {
-            console.error('Erro ao verificar alarme:', err);
+    const consultaAlarme = `SELECT id FROM alarmes WHERE id = ?`;
+    banco.get(consultaAlarme, [idAlarme], (erro, alarme) => {
+        if (erro) {
+            console.error('Erro ao verificar alarme:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        if (!alarm) {
+        if (!alarme) {
             return res.status(404).json({ 
-                error: 'Alarme não encontrado' 
+                erro: 'Alarme não encontrado' 
             });
         }
 
-        const linkQuery = `INSERT INTO alarme_usuarios (alarme_id, usuario_id, permissao) VALUES (?, ?, ?)`;
+        const consultaVinculo = `INSERT INTO alarme_usuarios (alarme_id, usuario_id, permissao) VALUES (?, ?, ?)`;
         
-        db.run(linkQuery, [alarmeId, usuario_id, permissao], function(err) {
-            if (err) {
-                if (err.code === 'SQLITE_CONSTRAINT') {
+        banco.run(consultaVinculo, [idAlarme, usuario_id, permissao], function(erro) {
+            if (erro) {
+                if (erro.code === 'SQLITE_CONSTRAINT') {
                     return res.status(409).json({ 
-                        error: 'Usuário já vinculado a este alarme' 
+                        erro: 'Usuário já vinculado a este alarme' 
                     });
                 }
-                console.error('Erro ao vincular usuário:', err);
+                console.error('Erro ao vincular usuário:', erro);
                 return res.status(500).json({ 
-                    error: 'Erro interno do servidor' 
+                    erro: 'Erro interno do servidor' 
                 });
             }
             
             res.status(201).json({
                 id: this.lastID,
-                alarme_id: parseInt(alarmeId),
+                alarme_id: parseInt(idAlarme),
                 usuario_id: parseInt(usuario_id),
                 permissao,
-                message: 'Usuário vinculado ao alarme com sucesso'
+                mensagem: 'Usuário vinculado ao alarme com sucesso'
             });
         });
     });
@@ -175,65 +175,65 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
 
 app.get('/alarmes/:id/usuarios', (req, res) => {
     const { id } = req.params;
-    const query = `SELECT au.*, u.nome, u.celular 
+    const consulta = `SELECT au.*, u.nome, u.celular 
                    FROM alarme_usuarios au 
                    LEFT JOIN usuarios u ON au.usuario_id = u.id 
                    WHERE au.alarme_id = ?`;
     
-    db.all(query, [id], (err, rows) => {
-        if (err) {
-            console.error('Erro ao buscar usuários do alarme:', err);
+    banco.all(consulta, [id], (erro, linhas) => {
+        if (erro) {
+            console.error('Erro ao buscar usuários do alarme:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        res.json(rows);
+        res.json(linhas);
     });
 });
 
 app.post('/alarmes/:id/pontos', (req, res) => {
-    const { id: alarmeId } = req.params;
+    const { id: idAlarme } = req.params;
     const { nome, tipo } = req.body;
     
     if (!nome || !tipo) {
         return res.status(400).json({ 
-            error: 'Nome e tipo do ponto são obrigatórios' 
+            erro: 'Nome e tipo do ponto são obrigatórios' 
         });
     }
 
-    const checkAlarmQuery = `SELECT id FROM alarmes WHERE id = ?`;
-    db.get(checkAlarmQuery, [alarmeId], (err, alarm) => {
-        if (err) {
-            console.error('Erro ao verificar alarme:', err);
+    const consultaAlarme = `SELECT id FROM alarmes WHERE id = ?`;
+    banco.get(consultaAlarme, [idAlarme], (erro, alarme) => {
+        if (erro) {
+            console.error('Erro ao verificar alarme:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        if (!alarm) {
+        if (!alarme) {
             return res.status(404).json({ 
-                error: 'Alarme não encontrado' 
+                erro: 'Alarme não encontrado' 
             });
         }
 
-        const insertQuery = `INSERT INTO pontos_monitorados (alarme_id, nome, tipo) VALUES (?, ?, ?)`;
+        const consultaPonto = `INSERT INTO pontos_monitorados (alarme_id, nome, tipo) VALUES (?, ?, ?)`;
         
-        db.run(insertQuery, [alarmeId, nome, tipo], function(err) {
-            if (err) {
-                console.error('Erro ao adicionar ponto:', err);
+        banco.run(consultaPonto, [idAlarme, nome, tipo], function(erro) {
+            if (erro) {
+                console.error('Erro ao adicionar ponto:', erro);
                 return res.status(500).json({ 
-                    error: 'Erro interno do servidor' 
+                    erro: 'Erro interno do servidor' 
                 });
             }
             
             res.status(201).json({
                 id: this.lastID,
-                alarme_id: parseInt(alarmeId),
+                alarme_id: parseInt(idAlarme),
                 nome,
                 tipo,
                 ativo: true,
-                message: 'Ponto monitorado adicionado com sucesso'
+                mensagem: 'Ponto monitorado adicionado com sucesso'
             });
         });
     });
@@ -241,42 +241,42 @@ app.post('/alarmes/:id/pontos', (req, res) => {
 
 app.get('/alarmes/:id/pontos', (req, res) => {
     const { id } = req.params;
-    const query = `SELECT * FROM pontos_monitorados WHERE alarme_id = ? ORDER BY nome`;
+    const consulta = `SELECT * FROM pontos_monitorados WHERE alarme_id = ? ORDER BY nome`;
     
-    db.all(query, [id], (err, rows) => {
-        if (err) {
-            console.error('Erro ao buscar pontos monitorados:', err);
+    banco.all(consulta, [id], (erro, linhas) => {
+        if (erro) {
+            console.error('Erro ao buscar pontos monitorados:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        res.json(rows);
+        res.json(linhas);
     });
 });
 
 app.get('/alarmes/:id/permissao/:usuario_id', (req, res) => {
-    const { id: alarmeId, usuario_id } = req.params;
-    const query = `SELECT permissao FROM alarme_usuarios WHERE alarme_id = ? AND usuario_id = ?`;
+    const { id: idAlarme, usuario_id } = req.params;
+    const consulta = `SELECT permissao FROM alarme_usuarios WHERE alarme_id = ? AND usuario_id = ?`;
     
-    db.get(query, [alarmeId, usuario_id], (err, row) => {
-        if (err) {
-            console.error('Erro ao verificar permissão:', err);
+    banco.get(consulta, [idAlarme, usuario_id], (erro, linha) => {
+        if (erro) {
+            console.error('Erro ao verificar permissão:', erro);
             return res.status(500).json({ 
-                error: 'Erro interno do servidor' 
+                erro: 'Erro interno do servidor' 
             });
         }
         
-        if (!row) {
+        if (!linha) {
             return res.status(404).json({ 
-                error: 'Usuário não tem permissão para este alarme' 
+                erro: 'Usuário não tem permissão para este alarme' 
             });
         }
         
         res.json({
-            alarme_id: parseInt(alarmeId),
+            alarme_id: parseInt(idAlarme),
             usuario_id: parseInt(usuario_id),
-            permissao: row.permissao,
+            permissao: linha.permissao,
             autorizado: true
         });
     });
@@ -285,27 +285,27 @@ app.get('/alarmes/:id/permissao/:usuario_id', (req, res) => {
 app.get('/health', (req, res) => {
     res.json({ 
         status: 'OK', 
-        service: 'cadastro-alarmes',
-        timestamp: new Date().toISOString() 
+        servico: 'cadastro-alarmes',
+        horario: new Date().toISOString() 
     });
 });
 
-app.use((err, req, res, next) => {
-    console.error('Erro no serviço de alarmes:', err);
+app.use((erro, req, res, next) => {
+    console.error('Erro no serviço de alarmes:', erro);
     res.status(500).json({ 
-        error: 'Erro interno do servidor' 
+        erro: 'Erro interno do servidor' 
     });
 });
 
-app.listen(PORT, () => {
-    console.log(`Serviço de Cadastro de Alarmes rodando na porta ${PORT}`);
+app.listen(PORTA, () => {
+    console.log(`Serviço de Cadastro de Alarmes rodando na porta ${PORTA}`);
 });
 
 process.on('SIGINT', () => {
     console.log('Fechando conexão com o banco de dados...');
-    db.close((err) => {
-        if (err) {
-            console.error('Erro ao fechar banco:', err);
+    banco.close((erro) => {
+        if (erro) {
+            console.error('Erro ao fechar banco:', erro);
         } else {
             console.log('Conexão com banco fechada.');
         }
