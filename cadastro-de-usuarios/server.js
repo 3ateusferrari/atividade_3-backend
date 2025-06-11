@@ -49,8 +49,7 @@ app.post('/usuarios', async (req, res) => {
         }
         
         console.log('Iniciando hash da senha...');
-        // VERSÃO TEMPORÁRIA: usar senha simples para testar
-        const senhaHash = senha; // Temporariamente sem hash
+        const senhaHash = senha; 
         console.log('Hash da senha concluído (versão temporária)');
         
         const consulta = `INSERT INTO usuarios (nome, celular, email, senha) VALUES (?, ?, ?, ?)`;
@@ -120,7 +119,6 @@ app.post('/login', (req, res) => {
         if (erro) return res.status(500).json({ erro: 'Erro interno do servidor' });
         if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
         
-        // VERSÃO TEMPORÁRIA: comparar senhas diretamente
         const senhaValida = (senha === usuario.senha);
         
         if (!senhaValida) return res.status(401).json({ erro: 'Senha inválida' });

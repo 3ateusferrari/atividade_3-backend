@@ -10,6 +10,13 @@ const SECRET = process.env.JWT_SECRET || 'segredo_super_secreto';
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+    console.log('Headers:', req.headers);
+    console.log('Body:', req.body);
+    next();
+});
+
 const caminhoBanco = path.join(__dirname, 'disparos.db');
 const banco = new sqlite3.Database(caminhoBanco);
 
@@ -28,7 +35,7 @@ banco.serialize(() => {
 });
 
 function autenticarToken(req, res, next) {
-    if (req.path === '/health') return next();
+    if (req.path === '/health' || req.path === '/') return next();
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (!token) return res.status(401).json({ erro: 'Token não fornecido' });
@@ -41,21 +48,94 @@ function autenticarToken(req, res, next) {
 
 app.use(autenticarToken);
 
-async function verificarStatusAlarme(idAlarme) {
+async function verificarVinculoUsuario(req, res, next) {
+    console.log('=== VERIFICAÇÃO DE VÍNCULO ===');
+    console.log('Body recebido:', req.body);
+    console.log('Usuario do token:', req.usuario);
+    
+    const usuarioId = req.usuario.id;
+    const alarmeId = req.body?.alarme_id;
+    
+    if (!alarmeId) {
+        console.log('Erro: ID do alarme não fornecido no body');
+        return res.status(400).json({ erro: 'ID do alarme é obrigatório' });
+    }
+    
     try {
-        const resposta = await axios.get(`http://localhost:3003/acionamento/status/${idAlarme}`);
+        console.log(`Verificando permissão: usuário ${usuarioId} no alarme ${alarmeId}`);
+        
+        // Pegar o token original da requisição
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1];
+        
+        const resposta = await axios.get(`http://localhost:3002/alarmes/${alarmeId}/permissao/${usuarioId}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        console.log('Resposta da verificação:', resposta.data);
+        
+        if (!resposta.data.autorizado) {
+            console.log('Usuário não autorizado');
+            return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
+        }
+        
+        console.log('Usuário autorizado, continuando...');
+        next();
+    } catch (error) {
+        console.error('Erro na verificação de permissão:', error.message);
+        if (error.response) {
+            console.error('Status:', error.response.status);
+            console.error('Dados:', error.response.data);
+        }
+        return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
+    }
+}
+
+async function verificarStatusAlarme(idAlarme, token) {
+    try {
+        console.log(`Verificando status do alarme ${idAlarme}...`);
+        console.log('Token usado:', token ? token.substring(0, 20) + '...' : 'null');
+        
+        const resposta = await axios.get(`http://localhost:3003/acionamento/status/${idAlarme}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        console.log(`Status do alarme ${idAlarme}:`, resposta.data);
         return resposta.data;
     } catch (erro) {
-        console.error('Erro ao verificar status do alarme:', erro.message);
+        console.error(`Erro ao verificar status do alarme ${idAlarme}:`, erro.message);
+        if (erro.response) {
+            console.error('Status:', erro.response.status);
+            console.error('Dados:', erro.response.data);
+        }
         return null;
     }
 }
 
-async function validarAlarme(idAlarme) {
+async function validarAlarme(idAlarme, authHeader) {
     try {
-        const resposta = await axios.get(`http://localhost:3002/alarmes/${idAlarme}`);
+        console.log(`Validando alarme ${idAlarme}...`);
+        
+        // Extrair apenas o token do header Authorization
+        const token = authHeader && authHeader.split(' ')[1];
+        console.log('Token extraído:', token ? token.substring(0, 20) + '...' : 'null');
+        
+        const resposta = await axios.get(`http://localhost:3002/alarmes/${idAlarme}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        console.log(`Alarme ${idAlarme} validado com sucesso`);
         return resposta.status === 200;
     } catch (erro) {
+        console.error(`Erro ao validar alarme ${idAlarme}:`, erro.message);
+        if (erro.response) {
+            console.error('Status:', erro.response.status);
+            console.error('Dados:', erro.response.data);
+        }
         return false;
     }
 }
@@ -96,90 +176,131 @@ async function registrarLog(idAlarme, idUsuario, tipoEvento, detalhes) {
     }
 }
 
-async function verificarVinculoUsuario(req, res, next) {
-    const usuarioId = req.usuario.id;
-    const alarmeId = req.body.alarme_id;
-    if (!alarmeId) return res.status(400).json({ erro: 'ID do alarme é obrigatório' });
-    try {
-        const resposta = await axios.get(`http://localhost:3002/alarmes/${alarmeId}/permissao/${usuarioId}`);
-        if (!resposta.data.autorizado) return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
-        next();
-    } catch {
-        return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
-    }
-}
+// Rota raiz
+app.get('/', (req, res) => {
+    res.json({ 
+        servico: 'controle-disparo',
+        versao: '1.0.0',
+        porta: PORTA,
+        rotas_disponivel: {
+            'POST /disparo': 'Criar novo disparo',
+            'GET /disparo/:alarme_id': 'Buscar disparos de um alarme',
+            'GET /disparo/ativo/:alarme_id': 'Buscar disparos ativos',
+            'PATCH /disparo/:id/resolver': 'Resolver um disparo',
+            'GET /health': 'Status do serviço'
+        }
+    });
+});
+
+// Se alguém tentar fazer POST na raiz
+app.post('/', (req, res) => {
+    res.status(405).json({ 
+        erro: 'Método não permitido na raiz',
+        sugestao: 'Use POST /disparo para criar um disparo'
+    });
+});
 
 app.post('/disparo', verificarVinculoUsuario, async (req, res) => {
-    const { 
-        alarme_id, 
-        ponto_id, 
-        ponto_nome, 
-        tipo_disparo = 'movimento', 
-        detalhes 
-    } = req.body;
-    
-    if (!alarme_id) {
-        return res.status(400).json({ 
-            erro: 'ID do alarme é obrigatório' 
-        });
-    }
-
-    const alarmeExiste = await validarAlarme(alarme_id);
-    if (!alarmeExiste) {
-        return res.status(404).json({ 
-            erro: 'Alarme não encontrado' 
-        });
-    }
-
-    const statusAlarme = await verificarStatusAlarme(alarme_id);
-    if (!statusAlarme || statusAlarme.situacao !== 'ligado') {
-        return res.status(409).json({ 
-            erro: 'Alarme não está ativo',
-            status_atual: statusAlarme ? statusAlarme.situacao : 'desconhecido'
-        });
-    }
-
-    const consulta = `INSERT INTO disparos 
-                        (alarme_id, ponto_id, ponto_nome, tipo_disparo, detalhes) 
-                        VALUES (?, ?, ?, ?, ?)`;
-    
-    banco.run(consulta, [alarme_id, ponto_id, ponto_nome, tipo_disparo, detalhes], async function(erro) {
-        if (erro) {
-            console.error('Erro ao registrar disparo:', erro);
-            return res.status(500).json({ 
-                erro: 'Erro interno do servidor' 
+    try {
+        console.log('=== INÍCIO DO DISPARO ===');
+        console.log('Body recebido:', req.body);
+        
+        const { 
+            alarme_id, 
+            ponto_id, 
+            ponto_nome, 
+            tipo_disparo = 'movimento', 
+            detalhes 
+        } = req.body;
+        
+        if (!alarme_id) {
+            console.log('Erro: ID do alarme não fornecido');
+            return res.status(400).json({ 
+                erro: 'ID do alarme é obrigatório' 
             });
         }
 
-        const idDisparo = this.lastID;
-        const mensagemDisparo = `ALERTA: Disparo no alarme ${alarme_id} - ${ponto_nome || 'Ponto não identificado'} - Tipo: ${tipo_disparo}`;
-
-        await registrarLog(alarme_id, null, 'disparo', mensagemDisparo);
-
-        const usuarios = await buscarUsuariosAlarme(alarme_id);
-        for (const usuario of usuarios) {
-            await enviarNotificacao(alarme_id, usuario.usuario_id, 'disparo', mensagemDisparo);
+        console.log('Verificando se alarme existe...');
+        console.log('Token sendo usado:', req.headers['authorization']);
+        const alarmeExiste = await validarAlarme(alarme_id, req.headers['authorization']);
+        console.log('Alarme existe:', alarmeExiste);
+        
+        if (!alarmeExiste) {
+            console.log('Erro: Alarme não encontrado');
+            return res.status(404).json({ 
+                erro: 'Alarme não encontrado' 
+            });
         }
 
-        res.status(201).json({
-            id: idDisparo,
-            alarme_id: parseInt(alarme_id),
-            ponto_id: ponto_id,
-            ponto_nome,
-            tipo_disparo,
-            timestamp_disparo: new Date().toISOString(),
-            resolvido: false,
-            detalhes,
-            mensagem: 'Disparo registrado e notificações enviadas'
+        console.log('Verificando status do alarme...');
+        const token = req.headers['authorization'] && req.headers['authorization'].split(' ')[1];
+        const statusAlarme = await verificarStatusAlarme(alarme_id, token);
+        console.log('Status do alarme:', statusAlarme);
+        
+        if (!statusAlarme || statusAlarme.situacao !== 'ligado') {
+            console.log('Erro: Alarme não está ativo');
+            return res.status(409).json({ 
+                erro: 'Alarme não está ativo',
+                status_atual: statusAlarme ? statusAlarme.situacao : 'desconhecido'
+            });
+        }
+
+        console.log('Inserindo disparo no banco...');
+        const consulta = `INSERT INTO disparos 
+                            (alarme_id, ponto_id, ponto_nome, tipo_disparo, detalhes) 
+                            VALUES (?, ?, ?, ?, ?)`;
+        
+        banco.run(consulta, [alarme_id, ponto_id, ponto_nome, tipo_disparo, detalhes], async function(erro) {
+            if (erro) {
+                console.error('Erro ao registrar disparo:', erro);
+                return res.status(500).json({ 
+                    erro: 'Erro interno do servidor' 
+                });
+            }
+
+            console.log('Disparo registrado com sucesso, ID:', this.lastID);
+            const idDisparo = this.lastID;
+            const mensagemDisparo = `ALERTA: Disparo no alarme ${alarme_id} - ${ponto_nome || 'Ponto não identificado'} - Tipo: ${tipo_disparo}`;
+
+            console.log('Registrando log...');
+            await registrarLog(alarme_id, null, 'disparo', mensagemDisparo);
+
+            console.log('Buscando usuários do alarme...');
+            const usuarios = await buscarUsuariosAlarme(alarme_id);
+            console.log('Usuários encontrados:', usuarios);
+            
+            console.log('Enviando notificações...');
+            for (const usuario of usuarios) {
+                await enviarNotificacao(alarme_id, usuario.usuario_id, 'disparo', mensagemDisparo);
+            }
+
+            console.log('=== DISPARO CONCLUÍDO COM SUCESSO ===');
+            res.status(201).json({
+                id: idDisparo,
+                alarme_id: parseInt(alarme_id),
+                ponto_id: ponto_id,
+                ponto_nome,
+                tipo_disparo,
+                timestamp_disparo: new Date().toISOString(),
+                resolvido: false,
+                detalhes,
+                mensagem: 'Disparo registrado e notificações enviadas'
+            });
         });
-    });
+    } catch (error) {
+        console.error('Erro geral no disparo:', error);
+        res.status(500).json({ 
+            erro: 'Erro interno do servidor',
+            detalhes: error.message
+        });
+    }
 });
 
 app.get('/disparo/:alarme_id', async (req, res) => {
     const { alarme_id } = req.params;
     const { resolvido, limit = 50 } = req.query;
     
-    const alarmeExiste = await validarAlarme(alarme_id);
+    const alarmeExiste = await validarAlarme(alarme_id, req.headers['authorization']);
     if (!alarmeExiste) {
         return res.status(404).json({ 
             erro: 'Alarme não encontrado' 
@@ -212,7 +333,7 @@ app.get('/disparo/:alarme_id', async (req, res) => {
 app.get('/disparo/ativo/:alarme_id', async (req, res) => {
     const { alarme_id } = req.params;
     
-    const alarmeExiste = await validarAlarme(alarme_id);
+    const alarmeExiste = await validarAlarme(alarme_id, req.headers['authorization']);
     if (!alarmeExiste) {
         return res.status(404).json({ 
             erro: 'Alarme não encontrado' 

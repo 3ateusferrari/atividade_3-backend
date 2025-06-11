@@ -80,7 +80,6 @@ async function proxyRequest(req, res, servico) {
         console.log(`[PROXY] Body:`, req.body);
         console.log(`[PROXY] Query:`, req.query);
         
-        // Headers limpos - sem headers problemáticos
         const headersLimpos = limparHeaders(req.headers);
         
         const config = {
@@ -89,17 +88,15 @@ async function proxyRequest(req, res, servico) {
             headers: headersLimpos,
             timeout: 30000,
             validateStatus: function (status) {
-                return status < 600; // Aceita qualquer status < 600
+                return status < 600; 
             }
         };
         
-        // Adiciona dados para métodos que permitem body
         if (['post', 'put', 'patch'].includes(req.method.toLowerCase()) && req.body) {
             config.data = req.body;
             config.headers['content-type'] = 'application/json';
         }
         
-        // Adiciona query parameters
         if (Object.keys(req.query).length > 0) {
             config.params = req.query;
         }
@@ -116,7 +113,6 @@ async function proxyRequest(req, res, servico) {
         console.log(`[PROXY] Resposta: ${response.status} para ${req.url}`);
         console.log(`[PROXY] Dados da resposta:`, response.data);
         
-        // Copia apenas headers seguros da resposta
         const headersSeguros = ['content-type', 'cache-control', 'expires', 'last-modified', 'etag'];
         headersSeguros.forEach(header => {
             if (response.headers[header]) {
@@ -140,24 +136,20 @@ async function proxyRequest(req, res, servico) {
         });
         
         if (error.response) {
-            // Erro HTTP do serviço de destino
             res.status(error.response.status).json(error.response.data);
         } else if (error.code === 'ECONNREFUSED') {
-            // Serviço não está disponível
             res.status(503).json({ 
                 erro: 'Serviço Indisponível', 
                 mensagem: `O serviço ${servico} não está disponível`,
                 detalhes: `Não foi possível conectar com ${servicos[servico]}`
             });
         } else if (error.code === 'ECONNABORTED') {
-            // Timeout
             res.status(504).json({ 
                 erro: 'Timeout do Gateway',
                 mensagem: `O serviço ${servico} não respondeu dentro do tempo limite`,
                 timeout: '30 segundos'
             });
         } else {
-            // Outros erros
             res.status(500).json({ 
                 erro: 'Erro Interno do Gateway',
                 mensagem: error.message,
@@ -167,7 +159,6 @@ async function proxyRequest(req, res, servico) {
     }
 }
 
-// Configuração das rotas dos serviços
 Object.keys(servicos).forEach(servico => {
     app.use(`/api/${servico}`, (req, res) => {
         proxyRequest(req, res, servico);
@@ -197,7 +188,6 @@ app.get('/', (req, res) => {
     });
 });
 
-// Middleware de tratamento de erros
 app.use((erro, req, res, next) => {
     console.error('[GATEWAY] Erro não capturado:', erro);
     if (!res.headersSent) {
@@ -216,14 +206,13 @@ app.listen(PORTA, () => {
         console.log(`  /api/${servico} -> ${servicos[servico]}`);
     });
     
-    // Teste de conectividade com os serviços
     console.log('\nTestando conectividade com os serviços...');
     Object.entries(servicos).forEach(async ([nome, url]) => {
         try {
             await axios.get(`${url}/health`, { timeout: 5000 });
-            console.log(`✅ ${nome} (${url}) - ONLINE`);
+            console.log(`${nome} (${url}) - ONLINE`);
         } catch (error) {
-            console.log(`❌ ${nome} (${url}) - OFFLINE (${error.message})`);
+            console.log(`${nome} (${url}) - OFFLINE (${error.message})`);
         }
     });
 });

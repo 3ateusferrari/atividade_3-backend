@@ -104,7 +104,6 @@ function verificarVinculoUsuario(req, res, next) {
     });
 }
 
-// Middleware para verificar se o usuário pode gerenciar o alarme (apenas para vincular outros usuários)
 function verificarPermissaoGerencia(req, res, next) {
     const usuarioId = req.usuario.id;
     const alarmeId = req.params.id;
@@ -153,7 +152,6 @@ app.post('/alarmes', (req, res) => {
         
         const alarmeId = this.lastID;
         
-        // Vincula automaticamente o criador como administrador
         const consultaVinculo = `INSERT INTO alarme_usuarios (alarme_id, usuario_id, permissao) VALUES (?, ?, 'admin')`;
         
         banco.run(consultaVinculo, [alarmeId, usuarioId], function(erroVinculo) {
@@ -177,7 +175,6 @@ app.post('/alarmes', (req, res) => {
 app.get('/alarmes', (req, res) => {
     const usuarioId = req.usuario.id;
     
-    // Busca apenas alarmes que o usuário tem acesso
     const consulta = `
         SELECT a.* FROM alarmes a 
         INNER JOIN alarme_usuarios au ON a.id = au.alarme_id 
@@ -233,7 +230,6 @@ app.post('/alarmes/:id/usuarios', verificarPermissaoGerencia, async (req, res) =
         });
     }
 
-    // Valida se o usuário existe
     const usuarioExiste = await validarUsuario(usuario_id);
     if (!usuarioExiste) {
         return res.status(404).json({ 
@@ -241,7 +237,6 @@ app.post('/alarmes/:id/usuarios', verificarPermissaoGerencia, async (req, res) =
         });
     }
 
-    // Verifica se o alarme existe
     const consultaAlarme = `SELECT id FROM alarmes WHERE id = ?`;
     banco.get(consultaAlarme, [idAlarme], (erro, alarme) => {
         if (erro) {
@@ -290,7 +285,6 @@ app.post('/alarmes/:id/usuarios', verificarPermissaoGerencia, async (req, res) =
 app.get('/alarmes/:id/usuarios', verificarVinculoUsuario, (req, res) => {
     const { id } = req.params;
     
-    // Primeira consulta: buscar os vínculos
     const consulta = `SELECT * FROM alarme_usuarios WHERE alarme_id = ?`;
     
     banco.all(consulta, [id], async (erro, vinculos) => {
@@ -301,7 +295,6 @@ app.get('/alarmes/:id/usuarios', verificarVinculoUsuario, (req, res) => {
             });
         }
         
-        // Para cada vínculo, buscar dados do usuário
         const usuariosCompletos = [];
         
         for (const vinculo of vinculos) {

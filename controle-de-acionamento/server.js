@@ -18,6 +18,35 @@ app.use((req, res, next) => {
 
 const statusAlarmes = {};
 
+app.get('/status/:id_alarme', (req, res) => {
+    const { id_alarme } = req.params;
+    const situacao = statusAlarmes[id_alarme] || 'desligado';
+    
+    console.log(`[STATUS] Consultando status do alarme ${id_alarme}: ${situacao}`);
+    res.json({ 
+        id_alarme, 
+        situacao,
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/status', (req, res) => {
+    console.log('[STATUS] Consultando status de todos os alarmes');
+    res.json({
+        alarmes: statusAlarmes,
+        timestamp: new Date().toISOString()
+    });
+});
+
+app.get('/health', (req, res) => {
+    res.json({ 
+        status: 'OK', 
+        servico: 'controle-acionamento', 
+        horario: new Date().toISOString(),
+        alarmes_ativos: Object.keys(statusAlarmes).length
+    });
+});
+
 function autenticarToken(req, res, next) {
     if (req.path === '/health') return next();
     
@@ -49,7 +78,6 @@ async function verificarVinculoUsuario(req, res, next) {
     console.log(`[PERMISSAO] Verificando permissão - Usuário: ${usuarioId}, Alarme: ${alarmeId}`);
     
     try {
-        // Primeira tentativa: buscar o alarme específico
         const respostaAlarme = await axios.get(`http://localhost:3002/alarmes/${alarmeId}`, {
             timeout: 5000,
             headers: {
@@ -59,19 +87,16 @@ async function verificarVinculoUsuario(req, res, next) {
         
         console.log('[PERMISSAO] Dados do alarme:', respostaAlarme.data);
         
-        // Verifica se o alarme existe
         if (!respostaAlarme.data) {
             console.log('[PERMISSAO] Alarme não encontrado');
             return res.status(404).json({ erro: 'Alarme não encontrado' });
         }
         
-        // Verifica se o usuário é dono do alarme
         if (respostaAlarme.data.usuario_id && respostaAlarme.data.usuario_id.toString() === usuarioId.toString()) {
             console.log('[PERMISSAO] Usuário é dono do alarme - Acesso permitido');
             return next();
         }
         
-        // Tentativa alternativa: verificar rota de permissão específica
         try {
             const respostaPermissao = await axios.get(
                 `http://localhost:3002/alarmes/${alarmeId}/permissao/${usuarioId}`,
@@ -93,7 +118,6 @@ async function verificarVinculoUsuario(req, res, next) {
             console.log('[PERMISSAO] Rota de permissão não disponível:', erroPermissao.message);
         }
         
-        // Se chegou até aqui, não tem permissão
         console.log('[PERMISSAO] Usuário não tem permissão para este alarme');
         return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
         
@@ -120,7 +144,6 @@ app.post('/acionar/:id_alarme', verificarVinculoUsuario, async (req, res) => {
     console.log(`[ACIONAMENTO] Tentando armar alarme ${id_alarme} para usuário ${usuarioId}`);
     
     try {
-        // Busca dados do alarme
         const alarme = await axios.get(`http://localhost:3002/alarmes/${id_alarme}`, {
             headers: {
                 'authorization': req.headers['authorization']
@@ -131,10 +154,8 @@ app.post('/acionar/:id_alarme', verificarVinculoUsuario, async (req, res) => {
             return res.status(404).json({ erro: 'Alarme não encontrado' });
         }
         
-        // Atualiza status do alarme
         statusAlarmes[id_alarme] = 'ligado';
         
-        // Registra log
         try {
             await axios.post('http://localhost:3006/logs', {
                 alarme_id: id_alarme,
@@ -152,7 +173,6 @@ app.post('/acionar/:id_alarme', verificarVinculoUsuario, async (req, res) => {
             console.error('[ACIONAMENTO] Erro ao registrar log:', erroLog.message);
         }
         
-        // Envia notificação
         try {
             await axios.post('http://localhost:3005/notificacao/enviar', {
                 alarme_id: id_alarme,
@@ -191,7 +211,6 @@ app.post('/desarmar/:id_alarme', verificarVinculoUsuario, async (req, res) => {
     console.log(`[DESARMAMENTO] Tentando desarmar alarme ${id_alarme} para usuário ${usuarioId}`);
     
     try {
-        // Busca dados do alarme
         const alarme = await axios.get(`http://localhost:3002/alarmes/${id_alarme}`, {
             headers: {
                 'authorization': req.headers['authorization']
@@ -202,10 +221,8 @@ app.post('/desarmar/:id_alarme', verificarVinculoUsuario, async (req, res) => {
             return res.status(404).json({ erro: 'Alarme não encontrado' });
         }
         
-        // Atualiza status do alarme
         statusAlarmes[id_alarme] = 'desligado';
         
-        // Registra log
         try {
             await axios.post('http://localhost:3006/logs', {
                 alarme_id: id_alarme,
@@ -223,7 +240,6 @@ app.post('/desarmar/:id_alarme', verificarVinculoUsuario, async (req, res) => {
             console.error('[DESARMAMENTO] Erro ao registrar log:', erroLog.message);
         }
         
-        // Envia notificação
         try {
             await axios.post('http://localhost:3005/notificacao/enviar', {
                 alarme_id: id_alarme,
@@ -255,37 +271,6 @@ app.post('/desarmar/:id_alarme', verificarVinculoUsuario, async (req, res) => {
     }
 });
 
-app.get('/status/:id_alarme', verificarVinculoUsuario, (req, res) => {
-    const { id_alarme } = req.params;
-    const situacao = statusAlarmes[id_alarme] || 'desligado';
-    
-    console.log(`[STATUS] Consultando status do alarme ${id_alarme}: ${situacao}`);
-    
-    res.json({ 
-        id_alarme, 
-        situacao,
-        timestamp: new Date().toISOString()
-    });
-});
-
-app.get('/status', (req, res) => {
-    console.log('[STATUS] Consultando status de todos os alarmes');
-    res.json({
-        alarmes: statusAlarmes,
-        timestamp: new Date().toISOString()
-    });
-});
-
-app.get('/health', (req, res) => {
-    res.json({ 
-        status: 'OK', 
-        servico: 'controle-acionamento', 
-        horario: new Date().toISOString(),
-        alarmes_ativos: Object.keys(statusAlarmes).length
-    });
-});
-
-// Middleware de tratamento de erros
 app.use((erro, req, res, next) => {
     console.error('[ERRO] Erro não capturado:', erro);
     if (!res.headersSent) {
