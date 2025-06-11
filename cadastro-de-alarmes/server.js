@@ -2,9 +2,11 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const axios = require('axios');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORTA = 3002;
+const SECRET = process.env.JWT_SECRET || 'segredo_super_secreto';
 
 app.use(express.json());
 
@@ -47,6 +49,32 @@ async function validarUsuario(idUsuario) {
     } catch (erro) {
         return false;
     }
+}
+
+function autenticarToken(req, res, next) {
+    if (req.path === '/health') return next();
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ erro: 'Token não fornecido' });
+    jwt.verify(token, SECRET, (err, usuario) => {
+        if (err) return res.status(403).json({ erro: 'Token inválido' });
+        req.usuario = usuario;
+        next();
+    });
+}
+
+app.use(autenticarToken);
+
+function verificarVinculoUsuario(req, res, next) {
+    const usuarioId = req.usuario.id;
+    const alarmeId = req.params.id || req.body.alarme_id;
+    if (!alarmeId) return res.status(400).json({ erro: 'ID do alarme é obrigatório' });
+    const consulta = `SELECT * FROM alarme_usuarios WHERE alarme_id = ? AND usuario_id = ?`;
+    banco.get(consulta, [alarmeId, usuarioId], (erro, vinculo) => {
+        if (erro) return res.status(500).json({ erro: 'Erro interno do servidor' });
+        if (!vinculo) return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
+        next();
+    });
 }
 
 app.post('/alarmes', (req, res) => {

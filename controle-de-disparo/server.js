@@ -2,9 +2,11 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const axios = require('axios');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORTA = 3004;
+const SECRET = process.env.JWT_SECRET || 'segredo_super_secreto';
 
 app.use(express.json());
 
@@ -24,6 +26,20 @@ banco.serialize(() => {
         detalhes TEXT
     )`);
 });
+
+function autenticarToken(req, res, next) {
+    if (req.path === '/health') return next();
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ erro: 'Token não fornecido' });
+    jwt.verify(token, SECRET, (err, usuario) => {
+        if (err) return res.status(403).json({ erro: 'Token inválido' });
+        req.usuario = usuario;
+        next();
+    });
+}
+
+app.use(autenticarToken);
 
 async function verificarStatusAlarme(idAlarme) {
     try {
@@ -80,7 +96,20 @@ async function registrarLog(idAlarme, idUsuario, tipoEvento, detalhes) {
     }
 }
 
-app.post('/disparo', async (req, res) => {
+async function verificarVinculoUsuario(req, res, next) {
+    const usuarioId = req.usuario.id;
+    const alarmeId = req.body.alarme_id;
+    if (!alarmeId) return res.status(400).json({ erro: 'ID do alarme é obrigatório' });
+    try {
+        const resposta = await axios.get(`http://localhost:3002/alarmes/${alarmeId}/permissao/${usuarioId}`);
+        if (!resposta.data.autorizado) return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
+        next();
+    } catch {
+        return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
+    }
+}
+
+app.post('/disparo', verificarVinculoUsuario, async (req, res) => {
     const { 
         alarme_id, 
         ponto_id, 

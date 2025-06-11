@@ -23,8 +23,13 @@ banco.serialize(() => {
     )`);
 });
 
+const EVENTOS_VALIDOS = ['acionamento', 'desligamento', 'disparo', 'disparo_resolvido'];
+
 app.post('/logs', (req, res) => {
     const { alarme_id, usuario_id, tipo_evento, detalhes } = req.body;
+    if (!EVENTOS_VALIDOS.includes(tipo_evento)) {
+        return res.status(400).json({ erro: 'Tipo de evento inválido' });
+    }
     const consulta = `INSERT INTO logs (alarme_id, usuario_id, tipo_evento, detalhes) VALUES (?, ?, ?, ?)`;
     banco.run(consulta, [alarme_id, usuario_id, tipo_evento, detalhes], function(erro) {
         if (erro) {

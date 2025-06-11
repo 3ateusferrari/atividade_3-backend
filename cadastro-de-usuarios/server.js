@@ -2,6 +2,9 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const SECRET = process.env.JWT_SECRET || 'segredo_super_secreto';
 
 const app = express();
 const PORTA = 3001;
@@ -17,41 +20,41 @@ banco.serialize(() => {
         nome TEXT NOT NULL,
         celular TEXT NOT NULL UNIQUE,
         email TEXT,
+        senha TEXT NOT NULL,
         data_cadastro DATETIME DEFAULT CURRENT_TIMESTAMP
     )`);
 });
 
-app.post('/usuarios', (req, res) => {
-    const { nome, celular, email } = req.body;
-    
-    if (!nome || !celular) {
-        return res.status(400).json({ 
-            erro: 'Nome e celular são obrigatórios' 
-        });
-    }
+function autenticarToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ erro: 'Token não fornecido' });
+    jwt.verify(token, SECRET, (err, usuario) => {
+        if (err) return res.status(403).json({ erro: 'Token inválido' });
+        req.usuario = usuario;
+        next();
+    });
+}
 
-    const consulta = `INSERT INTO usuarios (nome, celular, email) VALUES (?, ?, ?)`;
-    
-    banco.run(consulta, [nome, celular, email], function(erro) {
+app.post('/usuarios', async (req, res) => {
+    const { nome, celular, email, senha } = req.body;
+    if (!nome || !celular || !senha) {
+        return res.status(400).json({ erro: 'Nome, celular e senha são obrigatórios' });
+    }
+    if (senha.length < 8 || !/[A-Z]/.test(senha) || !/[a-z]/.test(senha) || !/[0-9]/.test(senha)) {
+        return res.status(400).json({ erro: 'Senha deve ter pelo menos 8 caracteres, incluindo maiúscula, minúscula e número' });
+    }
+    const senhaHash = await bcrypt.hash(senha, 10);
+    const consulta = `INSERT INTO usuarios (nome, celular, email, senha) VALUES (?, ?, ?, ?)`;
+    banco.run(consulta, [nome, celular, email, senhaHash], function(erro) {
         if (erro) {
             if (erro.code === 'SQLITE_CONSTRAINT') {
-                return res.status(409).json({ 
-                    erro: 'Celular já cadastrado' 
-                });
+                return res.status(409).json({ erro: 'Celular já cadastrado' });
             }
             console.error('Erro ao criar usuário:', erro);
-            return res.status(500).json({ 
-                erro: 'Erro interno do servidor' 
-            });
+            return res.status(500).json({ erro: 'Erro interno do servidor' });
         }
-        
-        res.status(201).json({
-            id: this.lastID,
-            nome,
-            celular,
-            email,
-            mensagem: 'Usuário criado com sucesso'
-        });
+        res.status(201).json({ id: this.lastID, nome, celular, email, mensagem: 'Usuário criado com sucesso' });
     });
 });
 
@@ -92,68 +95,84 @@ app.get('/usuarios/:id', (req, res) => {
     });
 });
 
-app.put('/usuarios/:id', (req, res) => {
-    const { id } = req.params;
-    const { nome, celular, email } = req.body;
-    
-    if (!nome || !celular) {
-        return res.status(400).json({ 
-            erro: 'Nome e celular são obrigatórios' 
-        });
+app.post('/login', (req, res) => {
+    const { celular, senha } = req.body;
+    if (!celular || !senha) {
+        return res.status(400).json({ erro: 'Celular e senha são obrigatórios' });
     }
-
-    const consulta = `UPDATE usuarios SET nome = ?, celular = ?, email = ? WHERE id = ?`;
-    
-    banco.run(consulta, [nome, celular, email, id], function(erro) {
-        if (erro) {
-            if (erro.code === 'SQLITE_CONSTRAINT') {
-                return res.status(409).json({ 
-                    erro: 'Celular já cadastrado para outro usuário' 
-                });
-            }
-            console.error('Erro ao atualizar usuário:', erro);
-            return res.status(500).json({ 
-                erro: 'Erro interno do servidor' 
-            });
-        }
-        
-        if (this.changes === 0) {
-            return res.status(404).json({ 
-                erro: 'Usuário não encontrado' 
-            });
-        }
-        
-        res.json({
-            id: parseInt(id),
-            nome,
-            celular,
-            email,
-            mensagem: 'Usuário atualizado com sucesso'
-        });
+    const consulta = `SELECT * FROM usuarios WHERE celular = ?`;
+    banco.get(consulta, [celular], async (erro, usuario) => {
+        if (erro) return res.status(500).json({ erro: 'Erro interno do servidor' });
+        if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
+        const senhaValida = await bcrypt.compare(senha, usuario.senha);
+        if (!senhaValida) return res.status(401).json({ erro: 'Senha inválida' });
+        const token = jwt.sign({ id: usuario.id, celular: usuario.celular }, SECRET, { expiresIn: '8h' });
+        res.json({ token });
     });
 });
 
-app.delete('/usuarios/:id', (req, res) => {
+app.put('/usuarios/:id', autenticarToken, (req, res) => {
     const { id } = req.params;
+    if (parseInt(id) !== req.usuario.id) {
+        return res.status(403).json({ erro: 'Você só pode editar seu próprio cadastro' });
+    }
+    const { nome, celular, email, senha } = req.body;
+    if (!nome || !celular) {
+        return res.status(400).json({ erro: 'Nome e celular são obrigatórios' });
+    }
+    let consulta, params;
+    if (senha) {
+        if (senha.length < 8 || !/[A-Z]/.test(senha) || !/[a-z]/.test(senha) || !/[0-9]/.test(senha)) {
+            return res.status(400).json({ erro: 'Senha deve ter pelo menos 8 caracteres, incluindo maiúscula, minúscula e número' });
+        }
+        bcrypt.hash(senha, 10).then(senhaHash => {
+            consulta = `UPDATE usuarios SET nome = ?, celular = ?, email = ?, senha = ? WHERE id = ?`;
+            params = [nome, celular, email, senhaHash, id];
+            banco.run(consulta, params, function(erro) {
+                if (erro) {
+                    if (erro.code === 'SQLITE_CONSTRAINT') {
+                        return res.status(409).json({ erro: 'Celular já cadastrado para outro usuário' });
+                    }
+                    return res.status(500).json({ erro: 'Erro interno do servidor' });
+                }
+                if (this.changes === 0) {
+                    return res.status(404).json({ erro: 'Usuário não encontrado' });
+                }
+                res.json({ id: parseInt(id), nome, celular, email, mensagem: 'Usuário atualizado com sucesso' });
+            });
+        });
+    } else {
+        consulta = `UPDATE usuarios SET nome = ?, celular = ?, email = ? WHERE id = ?`;
+        params = [nome, celular, email, id];
+        banco.run(consulta, params, function(erro) {
+            if (erro) {
+                if (erro.code === 'SQLITE_CONSTRAINT') {
+                    return res.status(409).json({ erro: 'Celular já cadastrado para outro usuário' });
+                }
+                return res.status(500).json({ erro: 'Erro interno do servidor' });
+            }
+            if (this.changes === 0) {
+                return res.status(404).json({ erro: 'Usuário não encontrado' });
+            }
+            res.json({ id: parseInt(id), nome, celular, email, mensagem: 'Usuário atualizado com sucesso' });
+        });
+    }
+});
+
+app.delete('/usuarios/:id', autenticarToken, (req, res) => {
+    const { id } = req.params;
+    if (parseInt(id) !== req.usuario.id) {
+        return res.status(403).json({ erro: 'Você só pode deletar seu próprio cadastro' });
+    }
     const consulta = `DELETE FROM usuarios WHERE id = ?`;
-    
     banco.run(consulta, [id], function(erro) {
         if (erro) {
-            console.error('Erro ao deletar usuário:', erro);
-            return res.status(500).json({ 
-                erro: 'Erro interno do servidor' 
-            });
+            return res.status(500).json({ erro: 'Erro interno do servidor' });
         }
-        
         if (this.changes === 0) {
-            return res.status(404).json({ 
-                erro: 'Usuário não encontrado' 
-            });
+            return res.status(404).json({ erro: 'Usuário não encontrado' });
         }
-        
-        res.json({ 
-            mensagem: 'Usuário deletado com sucesso' 
-        });
+        res.json({ mensagem: 'Usuário deletado com sucesso' });
     });
 });
 

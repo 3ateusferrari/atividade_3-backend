@@ -1,9 +1,11 @@
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORTA = 3000;
+const SECRET = process.env.JWT_SECRET || 'segredo_super_secreto';
 
 app.use(cors());
 app.use(express.json());
@@ -12,6 +14,21 @@ app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
 });
+
+function autenticarToken(req, res, next) {
+    if (req.path === '/health' || req.path === '/') return next();
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.status(401).json({ erro: 'Token não fornecido' });
+    jwt.verify(token, SECRET, (err, usuario) => {
+        if (err) return res.status(403).json({ erro: 'Token inválido' });
+        req.usuario = usuario;
+        req.headers['x-usuario-id'] = usuario.id;
+        next();
+    });
+}
+
+app.use(autenticarToken);
 
 const servicos = {
     usuarios: 'http://localhost:3001',
