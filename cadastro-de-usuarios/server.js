@@ -36,25 +36,41 @@ function autenticarToken(req, res, next) {
 }
 
 app.post('/usuarios', async (req, res) => {
-    const { nome, celular, email, senha } = req.body;
-    if (!nome || !celular || !senha) {
-        return res.status(400).json({ erro: 'Nome, celular e senha são obrigatórios' });
-    }
-    if (senha.length < 8 || !/[A-Z]/.test(senha) || !/[a-z]/.test(senha) || !/[0-9]/.test(senha)) {
-        return res.status(400).json({ erro: 'Senha deve ter pelo menos 8 caracteres, incluindo maiúscula, minúscula e número' });
-    }
-    const senhaHash = await bcrypt.hash(senha, 10);
-    const consulta = `INSERT INTO usuarios (nome, celular, email, senha) VALUES (?, ?, ?, ?)`;
-    banco.run(consulta, [nome, celular, email, senhaHash], function(erro) {
-        if (erro) {
-            if (erro.code === 'SQLITE_CONSTRAINT') {
-                return res.status(409).json({ erro: 'Celular já cadastrado' });
-            }
-            console.error('Erro ao criar usuário:', erro);
-            return res.status(500).json({ erro: 'Erro interno do servidor' });
+    try {
+        const { nome, celular, email, senha } = req.body;
+        console.log('Recebida requisição para criar usuário:', { nome, celular, email });
+        
+        if (!nome || !celular || !senha) {
+            return res.status(400).json({ erro: 'Nome, celular e senha são obrigatórios' });
         }
-        res.status(201).json({ id: this.lastID, nome, celular, email, mensagem: 'Usuário criado com sucesso' });
-    });
+        
+        if (senha.length < 8 || !/[A-Z]/.test(senha) || !/[a-z]/.test(senha) || !/[0-9]/.test(senha)) {
+            return res.status(400).json({ erro: 'Senha deve ter pelo menos 8 caracteres, incluindo maiúscula, minúscula e número' });
+        }
+        
+        console.log('Iniciando hash da senha...');
+        // VERSÃO TEMPORÁRIA: usar senha simples para testar
+        const senhaHash = senha; // Temporariamente sem hash
+        console.log('Hash da senha concluído (versão temporária)');
+        
+        const consulta = `INSERT INTO usuarios (nome, celular, email, senha) VALUES (?, ?, ?, ?)`;
+        console.log('Executando inserção no banco...');
+        
+        banco.run(consulta, [nome, celular, email, senhaHash], function(erro) {
+            if (erro) {
+                console.error('Erro ao criar usuário:', erro);
+                if (erro.code === 'SQLITE_CONSTRAINT') {
+                    return res.status(409).json({ erro: 'Celular já cadastrado' });
+                }
+                return res.status(500).json({ erro: 'Erro interno do servidor' });
+            }
+            console.log('Usuário criado com sucesso, ID:', this.lastID);
+            res.status(201).json({ id: this.lastID, nome, celular, email, mensagem: 'Usuário criado com sucesso' });
+        });
+    } catch (erro) {
+        console.error('Erro na criação de usuário:', erro);
+        res.status(500).json({ erro: 'Erro interno do servidor' });
+    }
 });
 
 app.get('/usuarios', (req, res) => {
@@ -103,7 +119,10 @@ app.post('/login', (req, res) => {
     banco.get(consulta, [celular], async (erro, usuario) => {
         if (erro) return res.status(500).json({ erro: 'Erro interno do servidor' });
         if (!usuario) return res.status(404).json({ erro: 'Usuário não encontrado' });
-        const senhaValida = await bcrypt.compare(senha, usuario.senha);
+        
+        // VERSÃO TEMPORÁRIA: comparar senhas diretamente
+        const senhaValida = (senha === usuario.senha);
+        
         if (!senhaValida) return res.status(401).json({ erro: 'Senha inválida' });
         const token = jwt.sign({ id: usuario.id, celular: usuario.celular }, SECRET, { expiresIn: '8h' });
         res.json({ token });

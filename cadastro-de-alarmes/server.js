@@ -44,20 +44,37 @@ banco.serialize(() => {
 
 async function validarUsuario(idUsuario) {
     try {
-        const resposta = await axios.get(`http://localhost:3001/usuarios/${idUsuario}`);
+        console.log(`[VALIDAÇÃO] Verificando usuário ID: ${idUsuario}`);
+        const resposta = await axios.get(`http://localhost:3001/usuarios/${idUsuario}`, {
+            timeout: 5000,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        console.log(`[VALIDAÇÃO] Usuário ${idUsuario} encontrado:`, resposta.status === 200);
         return resposta.status === 200;
     } catch (erro) {
+        console.error(`[VALIDAÇÃO] Erro ao validar usuário ${idUsuario}:`, erro.message);
         return false;
     }
 }
 
 function autenticarToken(req, res, next) {
     if (req.path === '/health') return next();
+    
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (!token) return res.status(401).json({ erro: 'Token não fornecido' });
+    
+    if (!token) {
+        return res.status(401).json({ erro: 'Token não fornecido' });
+    }
+    
     jwt.verify(token, SECRET, (err, usuario) => {
-        if (err) return res.status(403).json({ erro: 'Token inválido' });
+        if (err) {
+            console.error('[AUTH] Token inválido:', err.message);
+            return res.status(403).json({ erro: 'Token inválido' });
+        }
+        console.log('[AUTH] Usuário autenticado:', usuario.id);
         req.usuario = usuario;
         next();
     });
@@ -68,23 +85,61 @@ app.use(autenticarToken);
 function verificarVinculoUsuario(req, res, next) {
     const usuarioId = req.usuario.id;
     const alarmeId = req.params.id || req.body.alarme_id;
-    if (!alarmeId) return res.status(400).json({ erro: 'ID do alarme é obrigatório' });
+    
+    if (!alarmeId) {
+        return res.status(400).json({ erro: 'ID do alarme é obrigatório' });
+    }
+    
     const consulta = `SELECT * FROM alarme_usuarios WHERE alarme_id = ? AND usuario_id = ?`;
     banco.get(consulta, [alarmeId, usuarioId], (erro, vinculo) => {
-        if (erro) return res.status(500).json({ erro: 'Erro interno do servidor' });
-        if (!vinculo) return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
+        if (erro) {
+            console.error('[VÍNCULO] Erro ao verificar vínculo:', erro);
+            return res.status(500).json({ erro: 'Erro interno do servidor' });
+        }
+        if (!vinculo) {
+            return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
+        }
+        console.log('[VÍNCULO] Usuário autorizado para alarme:', alarmeId);
+        next();
+    });
+}
+
+// Middleware para verificar se o usuário pode gerenciar o alarme (apenas para vincular outros usuários)
+function verificarPermissaoGerencia(req, res, next) {
+    const usuarioId = req.usuario.id;
+    const alarmeId = req.params.id;
+    
+    const consulta = `SELECT permissao FROM alarme_usuarios WHERE alarme_id = ? AND usuario_id = ?`;
+    banco.get(consulta, [alarmeId, usuarioId], (erro, vinculo) => {
+        if (erro) {
+            console.error('[PERMISSÃO] Erro ao verificar permissão:', erro);
+            return res.status(500).json({ erro: 'Erro interno do servidor' });
+        }
+        
+        if (!vinculo) {
+            return res.status(403).json({ erro: 'Usuário não tem permissão para este alarme' });
+        }
+        
+        if (vinculo.permissao !== 'admin' && vinculo.permissao !== 'gerente') {
+            return res.status(403).json({ erro: 'Apenas administradores podem vincular outros usuários' });
+        }
+        
+        console.log('[PERMISSÃO] Usuário autorizado a gerenciar alarme:', alarmeId);
         next();
     });
 }
 
 app.post('/alarmes', (req, res) => {
     const { nome, local } = req.body;
+    const usuarioId = req.usuario.id;
     
     if (!nome || !local) {
         return res.status(400).json({ 
             erro: 'Nome e local são obrigatórios' 
         });
     }
+
+    console.log(`[CREATE] Criando alarme para usuário ${usuarioId}:`, { nome, local });
 
     const consulta = `INSERT INTO alarmes (nome, local) VALUES (?, ?)`;
     
@@ -96,20 +151,41 @@ app.post('/alarmes', (req, res) => {
             });
         }
         
-        res.status(201).json({
-            id: this.lastID,
-            nome,
-            local,
-            status: 'desligado',
-            mensagem: 'Alarme criado com sucesso'
+        const alarmeId = this.lastID;
+        
+        // Vincula automaticamente o criador como administrador
+        const consultaVinculo = `INSERT INTO alarme_usuarios (alarme_id, usuario_id, permissao) VALUES (?, ?, 'admin')`;
+        
+        banco.run(consultaVinculo, [alarmeId, usuarioId], function(erroVinculo) {
+            if (erroVinculo) {
+                console.error('Erro ao vincular criador do alarme:', erroVinculo);
+            } else {
+                console.log(`[CREATE] Usuário ${usuarioId} vinculado como admin do alarme ${alarmeId}`);
+            }
+            
+            res.status(201).json({
+                id: alarmeId,
+                nome,
+                local,
+                status: 'desligado',
+                mensagem: 'Alarme criado com sucesso'
+            });
         });
     });
 });
 
 app.get('/alarmes', (req, res) => {
-    const consulta = `SELECT * FROM alarmes ORDER BY data_instalacao DESC`;
+    const usuarioId = req.usuario.id;
     
-    banco.all(consulta, [], (erro, linhas) => {
+    // Busca apenas alarmes que o usuário tem acesso
+    const consulta = `
+        SELECT a.* FROM alarmes a 
+        INNER JOIN alarme_usuarios au ON a.id = au.alarme_id 
+        WHERE au.usuario_id = ? 
+        ORDER BY a.data_instalacao DESC
+    `;
+    
+    banco.all(consulta, [usuarioId], (erro, linhas) => {
         if (erro) {
             console.error('Erro ao buscar alarmes:', erro);
             return res.status(500).json({ 
@@ -117,11 +193,12 @@ app.get('/alarmes', (req, res) => {
             });
         }
         
+        console.log(`[GET] Retornando ${linhas.length} alarmes para usuário ${usuarioId}`);
         res.json(linhas);
     });
 });
 
-app.get('/alarmes/:id', (req, res) => {
+app.get('/alarmes/:id', verificarVinculoUsuario, (req, res) => {
     const { id } = req.params;
     const consulta = `SELECT * FROM alarmes WHERE id = ?`;
     
@@ -143,9 +220,12 @@ app.get('/alarmes/:id', (req, res) => {
     });
 });
 
-app.post('/alarmes/:id/usuarios', async (req, res) => {
+app.post('/alarmes/:id/usuarios', verificarPermissaoGerencia, async (req, res) => {
     const { id: idAlarme } = req.params;
     const { usuario_id, permissao = 'usuario' } = req.body;
+    
+    console.log(`[VINCULAR] Tentativa de vincular usuário ${usuario_id} ao alarme ${idAlarme}`);
+    console.log(`[VINCULAR] Dados recebidos:`, req.body);
     
     if (!usuario_id) {
         return res.status(400).json({ 
@@ -153,13 +233,15 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
         });
     }
 
+    // Valida se o usuário existe
     const usuarioExiste = await validarUsuario(usuario_id);
     if (!usuarioExiste) {
         return res.status(404).json({ 
-            erro: 'Usuário não encontrado' 
+            erro: 'Usuário não encontrado no sistema' 
         });
     }
 
+    // Verifica se o alarme existe
     const consultaAlarme = `SELECT id FROM alarmes WHERE id = ?`;
     banco.get(consultaAlarme, [idAlarme], (erro, alarme) => {
         if (erro) {
@@ -175,11 +257,13 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
             });
         }
 
+        // Vincula o usuário ao alarme
         const consultaVinculo = `INSERT INTO alarme_usuarios (alarme_id, usuario_id, permissao) VALUES (?, ?, ?)`;
         
         banco.run(consultaVinculo, [idAlarme, usuario_id, permissao], function(erro) {
             if (erro) {
                 if (erro.code === 'SQLITE_CONSTRAINT') {
+                    console.log(`[VINCULAR] Tentativa de vínculo duplicado: alarme ${idAlarme}, usuário ${usuario_id}`);
                     return res.status(409).json({ 
                         erro: 'Usuário já vinculado a este alarme' 
                     });
@@ -189,6 +273,8 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
                     erro: 'Erro interno do servidor' 
                 });
             }
+            
+            console.log(`[VINCULAR] Sucesso: usuário ${usuario_id} vinculado ao alarme ${idAlarme} com permissão ${permissao}`);
             
             res.status(201).json({
                 id: this.lastID,
@@ -201,14 +287,13 @@ app.post('/alarmes/:id/usuarios', async (req, res) => {
     });
 });
 
-app.get('/alarmes/:id/usuarios', (req, res) => {
+app.get('/alarmes/:id/usuarios', verificarVinculoUsuario, (req, res) => {
     const { id } = req.params;
-    const consulta = `SELECT au.*, u.nome, u.celular 
-                   FROM alarme_usuarios au 
-                   LEFT JOIN usuarios u ON au.usuario_id = u.id 
-                   WHERE au.alarme_id = ?`;
     
-    banco.all(consulta, [id], (erro, linhas) => {
+    // Primeira consulta: buscar os vínculos
+    const consulta = `SELECT * FROM alarme_usuarios WHERE alarme_id = ?`;
+    
+    banco.all(consulta, [id], async (erro, vinculos) => {
         if (erro) {
             console.error('Erro ao buscar usuários do alarme:', erro);
             return res.status(500).json({ 
@@ -216,11 +301,35 @@ app.get('/alarmes/:id/usuarios', (req, res) => {
             });
         }
         
-        res.json(linhas);
+        // Para cada vínculo, buscar dados do usuário
+        const usuariosCompletos = [];
+        
+        for (const vinculo of vinculos) {
+            try {
+                const resposta = await axios.get(`http://localhost:3001/usuarios/${vinculo.usuario_id}`, {
+                    timeout: 5000
+                });
+                
+                usuariosCompletos.push({
+                    ...vinculo,
+                    nome: resposta.data.nome,
+                    celular: resposta.data.celular
+                });
+            } catch (erro) {
+                console.error(`Erro ao buscar dados do usuário ${vinculo.usuario_id}:`, erro.message);
+                usuariosCompletos.push({
+                    ...vinculo,
+                    nome: 'Usuário não encontrado',
+                    celular: null
+                });
+            }
+        }
+        
+        res.json(usuariosCompletos);
     });
 });
 
-app.post('/alarmes/:id/pontos', (req, res) => {
+app.post('/alarmes/:id/pontos', verificarVinculoUsuario, (req, res) => {
     const { id: idAlarme } = req.params;
     const { nome, tipo } = req.body;
     
@@ -267,7 +376,7 @@ app.post('/alarmes/:id/pontos', (req, res) => {
     });
 });
 
-app.get('/alarmes/:id/pontos', (req, res) => {
+app.get('/alarmes/:id/pontos', verificarVinculoUsuario, (req, res) => {
     const { id } = req.params;
     const consulta = `SELECT * FROM pontos_monitorados WHERE alarme_id = ? ORDER BY nome`;
     
@@ -320,9 +429,12 @@ app.get('/health', (req, res) => {
 
 app.use((erro, req, res, next) => {
     console.error('Erro no serviço de alarmes:', erro);
-    res.status(500).json({ 
-        erro: 'Erro interno do servidor' 
-    });
+    if (!res.headersSent) {
+        res.status(500).json({ 
+            erro: 'Erro interno do servidor',
+            mensagem: erro.message 
+        });
+    }
 });
 
 app.listen(PORTA, () => {
